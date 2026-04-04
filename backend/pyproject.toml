@@ -1,0 +1,22 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "FastAPI control-plane service for Cozmo Voice Platform"
+requires-python = ">=3.12"
+dependencies = [
+  "cozmo-contracts",
+  "dnspython>=2.7.0",
+  "fastapi>=0.115.12",
+  "livekit-api>=1.1.0",
+  "pymongo>=4.10.1",
+  "prometheus-client>=0.21.1",
+  "pydantic-settings>=2.8.1",
+  "uvicorn[standard]>=0.34.0",
+]
+
+[tool.uv]
+package = false
+
+[build-system]
+requires = ["uv_build>=0.8.15,<0.9.0"]
+build-backend = "uv_build"

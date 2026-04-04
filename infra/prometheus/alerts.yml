@@ -1,0 +1,11 @@
+groups:
+  - name: cozmo-platform
+    rules:
+      - alert: BackendDown
+        expr: up{job="backend"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Backend is unreachable
+

@@ -1,0 +1,33 @@
+[project]
+name = "cozmo-voice-platform"
+version = "0.1.0"
+description = "Workspace scaffold for the Cozmo PSTN voice AI platform"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28.1",
+  "pytest>=8.3.5",
+  "pytest-asyncio>=0.25.3",
+  "pytest-cov>=6.1.1",
+  "ruff>=0.11.5",
+]
+
+[tool.uv.workspace]
+members = ["backend", "agent", "knowledge", "contracts"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+cozmo-contracts = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[build-system]
+requires = ["uv_build>=0.8.15,<0.9.0"]
+build-backend = "uv_build"

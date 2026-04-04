@@ -1,0 +1,15 @@
+[project]
+name = "cozmo-contracts"
+version = "0.1.0"
+description = "Shared Pydantic contracts for the Cozmo Voice Platform"
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2.11.3",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.15,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
