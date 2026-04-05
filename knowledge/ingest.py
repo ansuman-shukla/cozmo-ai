@@ -1,13 +1,15 @@
-"""Knowledge ingestion entrypoints."""
+"""Compatibility wrapper for ingestion helpers."""
 
-from chunker import chunk_text
+from cozmo_knowledge.ingest import (
+    build_documents_from_payload,
+    faq_items_to_documents,
+    ingest_text,
+    parse_file_content,
+)
 
-
-def ingest_text(document_id: str, text: str, chunk_size: int = 400, overlap: int = 40) -> dict:
-    """Chunk text and return an ingestion payload skeleton."""
-
-    return {
-        "document_id": document_id,
-        "chunks": chunk_text(text=text, chunk_size=chunk_size, overlap=overlap),
-    }
-
+__all__ = [
+    "build_documents_from_payload",
+    "faq_items_to_documents",
+    "ingest_text",
+    "parse_file_content",
+]

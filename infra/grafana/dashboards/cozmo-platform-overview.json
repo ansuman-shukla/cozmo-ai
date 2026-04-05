@@ -160,7 +160,7 @@
       },
       "targets": [
         {
-          "expr": "sum(cozmo_agent_jobs_active)",
+          "expr": "sum(cozmo_agent_jobs_active) or vector(0)",
           "refId": "A"
         }
       ],
@@ -217,7 +217,7 @@
       },
       "targets": [
         {
-          "expr": "max(cozmo_worker_job_queue_depth)",
+          "expr": "max(cozmo_worker_job_queue_depth) or vector(0)",
           "refId": "A"
         }
       ],
@@ -256,12 +256,12 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(cozmo_call_setup_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(cozmo_call_setup_seconds_bucket[$__range])))",
           "legendFormat": "p95 setup",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(cozmo_perceived_rtt_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(cozmo_perceived_rtt_seconds_bucket[$__range])))",
           "legendFormat": "p95 perceived RTT",
           "refId": "B"
         }
@@ -301,17 +301,17 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(cozmo_stt_latency_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(cozmo_stt_latency_seconds_bucket[$__range])))",
           "legendFormat": "p95 STT",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(cozmo_llm_ttft_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(cozmo_llm_ttft_seconds_bucket[$__range])))",
           "legendFormat": "p95 LLM TTFT",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(cozmo_tts_first_audio_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(cozmo_tts_first_audio_seconds_bucket[$__range])))",
           "legendFormat": "p95 TTS first audio",
           "refId": "C"
         }
@@ -395,17 +395,17 @@
       },
       "targets": [
         {
-          "expr": "cozmo_room_jitter_ms",
+          "expr": "last_over_time(cozmo_room_jitter_ms[$__range])",
           "legendFormat": "{{agent_config_id}} jitter",
           "refId": "A"
         },
         {
-          "expr": "cozmo_room_packet_loss_pct",
+          "expr": "last_over_time(cozmo_room_packet_loss_pct[$__range])",
           "legendFormat": "{{agent_config_id}} packet loss",
           "refId": "B"
         },
         {
-          "expr": "cozmo_room_mos_estimate",
+          "expr": "last_over_time(cozmo_room_mos_estimate[$__range])",
           "legendFormat": "{{agent_config_id}} MOS",
           "refId": "C"
         }
@@ -433,6 +433,6 @@
   "timezone": "",
   "title": "Cozmo Platform Overview",
   "uid": "cozmo-platform-overview",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

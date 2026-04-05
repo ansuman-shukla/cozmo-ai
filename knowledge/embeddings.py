@@ -1,9 +1,5 @@
-"""Embedding adapter placeholder."""
+"""Compatibility wrapper for embedding helpers."""
 
+from cozmo_knowledge.embeddings import EmbeddingAdapter, EmbeddingAdapterError
 
-class EmbeddingAdapter:
-    """Stub adapter for vector embedding generation."""
-
-    def embed(self, text: str) -> list[float]:
-        return [float(len(text))]
-
+__all__ = ["EmbeddingAdapter", "EmbeddingAdapterError"]

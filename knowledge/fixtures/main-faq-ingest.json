@@ -1,0 +1,10 @@
+{
+  "collection_name": "main-faq",
+  "files": [
+    {
+      "document_id": "main-faq-seed",
+      "file_name": "main-faq.json",
+      "content": "[\n  {\n    \"item_id\": \"hours\",\n    \"question\": \"What are your business hours?\",\n    \"answer\": \"Our phone line is available from 9 AM to 6 PM Monday through Saturday.\"\n  },\n  {\n    \"item_id\": \"pricing\",\n    \"question\": \"What does the starter plan cost?\",\n    \"answer\": \"The starter plan costs 29 US dollars per month and includes the core voice assistant features.\"\n  },\n  {\n    \"item_id\": \"support\",\n    \"question\": \"Do you offer phone support?\",\n    \"answer\": \"Phone support is available on the growth plan and enterprise plan.\"\n  },\n  {\n    \"item_id\": \"trial\",\n    \"question\": \"Do you provide a free trial?\",\n    \"answer\": \"Yes, we provide a 7 day free trial for new customers.\"\n  }\n]\n"
+    }
+  ]
+}

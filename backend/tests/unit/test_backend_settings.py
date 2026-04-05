@@ -90,7 +90,7 @@ def test_backend_settings_support_generic_runtime_envs(monkeypatch: pytest.Monke
     assert settings.api_key == "internal-secret"
     assert settings.log_level == "DEBUG"
     assert settings.retrieval_settings().top_k == 5
-    assert settings.timeout_settings().llm_ms == 9000
+    assert settings.timeout_settings().llm_ms == 10000
 
 
 @pytest.mark.unit
@@ -101,3 +101,17 @@ def test_backend_settings_accept_gemini_api_key_alias(monkeypatch: pytest.Monkey
     settings = config.Settings(_env_file=None)
 
     assert settings.gemini_api_key == "gemini-test-key"
+
+
+@pytest.mark.unit
+def test_backend_settings_raise_gemini_llm_timeout_to_supported_minimum(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_module("backend_config", "app/config.py")
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("LLM_MODEL", "gemini-3-flash-preview")
+    monkeypatch.setenv("TIMEOUT_LLM_MS", "8000")
+
+    settings = config.Settings(_env_file=None)
+
+    assert settings.timeout_llm_ms == 10000

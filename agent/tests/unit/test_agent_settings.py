@@ -102,3 +102,44 @@ def test_agent_settings_accept_gemini_api_key_and_export_provider_env(monkeypatc
     assert settings.gemini_api_key == "gemini-test-key"
     assert os.environ["GOOGLE_API_KEY"] == "gemini-test-key"
     assert os.environ["DEEPGRAM_API_KEY"] == "deepgram-test-key"
+
+
+@pytest.mark.unit
+def test_agent_settings_coerce_openai_provider_when_model_is_gemini(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_module("agent_config", "app/config.py")
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("LLM_MODEL", "gemini-3-flash-preview")
+
+    settings = config.Settings(_env_file=None)
+
+    assert settings.llm_provider == "gemini"
+    assert settings.llm_model == "gemini-3-flash-preview"
+
+
+@pytest.mark.unit
+def test_agent_settings_raise_gemini_llm_timeout_to_supported_minimum(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_module("agent_config", "app/config.py")
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("LLM_MODEL", "gemini-3-flash-preview")
+    monkeypatch.setenv("TIMEOUT_LLM_MS", "8000")
+
+    settings = config.Settings(_env_file=None)
+
+    assert settings.timeout_llm_ms == 10000
+
+
+@pytest.mark.unit
+def test_agent_settings_rewrite_backend_service_alias_to_localhost_on_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_module("agent_config", "app/config.py")
+    monkeypatch.setenv("COZMO_AGENT_BACKEND_BASE_URL", "http://backend:8000")
+    monkeypatch.setattr(config.os.path, "exists", lambda path: False)
+
+    settings = config.Settings(_env_file=None)
+
+    assert settings.backend_base_url == "http://127.0.0.1:8000"

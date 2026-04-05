@@ -35,6 +35,11 @@ def build_settings(**overrides: Any) -> SimpleNamespace:
         "mongo_database": "cozmo_voice",
         "mongo_server_selection_timeout_ms": 2500,
         "auto_create_indexes": True,
+        "chroma_uri": "memory://",
+        "embedding_model": "local-hash-v1",
+        "kb_top_k": 3,
+        "kb_min_score": 0.35,
+        "openai_api_key": None,
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)

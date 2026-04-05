@@ -1,0 +1,22 @@
+[
+  {
+    "item_id": "hours",
+    "question": "What are your business hours?",
+    "answer": "Our phone line is available from 9 AM to 6 PM Monday through Saturday."
+  },
+  {
+    "item_id": "pricing",
+    "question": "What does the starter plan cost?",
+    "answer": "The starter plan costs 29 US dollars per month and includes the core voice assistant features."
+  },
+  {
+    "item_id": "support",
+    "question": "Do you offer phone support?",
+    "answer": "Phone support is available on the growth plan and enterprise plan."
+  },
+  {
+    "item_id": "trial",
+    "question": "Do you provide a free trial?",
+    "answer": "Yes, we provide a 7 day free trial for new customers."
+  }
+]

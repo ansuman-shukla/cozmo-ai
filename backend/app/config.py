@@ -11,6 +11,7 @@ from cozmo_contracts.runtime import RetrievalSettings, TimeoutSettings
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ROOT_ENV_FILE = REPO_ROOT / ".env"
+MIN_GEMINI_LLM_TIMEOUT_MS = 10_000
 
 
 def resolve_mongo_database_name(mongo_uri: str, explicit_database: str | None = None) -> str:
@@ -213,6 +214,15 @@ class Settings(BaseSettings):
     def populate_database_name(self) -> "Settings":
         """Fill the effective Mongo database name from the URI when needed."""
 
+        normalized_provider = str(self.llm_provider).strip().lower()
+        normalized_model = str(self.llm_model).strip().lower()
+        if normalized_provider == "openai" and normalized_model.startswith("gemini-"):
+            self.llm_provider = "gemini"
+            normalized_provider = "gemini"
+        if normalized_provider == "gemini" and normalized_model.startswith("gpt-"):
+            self.llm_model = "gemini-3-flash-preview"
+        if normalized_provider == "gemini" and self.timeout_llm_ms < MIN_GEMINI_LLM_TIMEOUT_MS:
+            self.timeout_llm_ms = MIN_GEMINI_LLM_TIMEOUT_MS
         self.mongo_database = resolve_mongo_database_name(self.mongo_uri, self.mongo_database)
         return self
 

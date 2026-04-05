@@ -31,13 +31,22 @@ def get_or_create_histogram(
     return Histogram(name, documentation, labelnames=labelnames, buckets=buckets)
 
 
-def get_or_create_gauge(name: str, documentation: str, *, labelnames: tuple[str, ...] = ()) -> Gauge:
+def get_or_create_gauge(
+    name: str,
+    documentation: str,
+    *,
+    labelnames: tuple[str, ...] = (),
+    multiprocess_mode: str | None = None,
+) -> Gauge:
     """Reuse an existing gauge when the module is imported multiple times in tests."""
 
     existing = REGISTRY._names_to_collectors.get(name)
     if existing is not None:
         return existing  # type: ignore[return-value]
-    return Gauge(name, documentation, labelnames=labelnames)
+    kwargs = {}
+    if multiprocess_mode is not None:
+        kwargs["multiprocess_mode"] = multiprocess_mode
+    return Gauge(name, documentation, labelnames=labelnames, **kwargs)
 
 
 WORKER_STARTS = get_or_create_counter(
@@ -84,21 +93,25 @@ AGENT_JOBS_ACTIVE = get_or_create_gauge(
     "cozmo_agent_jobs_active",
     "Number of active agent jobs running on the worker",
     labelnames=("worker_name",),
+    multiprocess_mode="livesum",
 )
 WORKER_JOB_QUEUE_DEPTH = get_or_create_gauge(
     "cozmo_worker_job_queue_depth",
     "Number of jobs above the configured verified worker capacity",
     labelnames=("worker_name",),
+    multiprocess_mode="livesum",
 )
 WORKER_CPU_UTILIZATION = get_or_create_gauge(
     "cozmo_worker_cpu_utilization",
     "Current worker-process CPU utilization as a percentage of host capacity",
     labelnames=("worker_name",),
+    multiprocess_mode="livemostrecent",
 )
 WORKER_MEMORY_UTILIZATION = get_or_create_gauge(
     "cozmo_worker_memory_utilization",
     "Current worker-process RSS memory utilization as a percentage of host memory",
     labelnames=("worker_name",),
+    multiprocess_mode="livemostrecent",
 )
 CALL_SETUP_SECONDS = get_or_create_histogram(
     "cozmo_call_setup_seconds",
@@ -145,16 +158,19 @@ ROOM_JITTER_MS = get_or_create_gauge(
     "cozmo_room_jitter_ms",
     "Latest aggregated room jitter in milliseconds for the active call",
     labelnames=("worker_name", "agent_config_id"),
+    multiprocess_mode="livemostrecent",
 )
 ROOM_PACKET_LOSS_PCT = get_or_create_gauge(
     "cozmo_room_packet_loss_pct",
     "Latest aggregated room packet loss percentage for the active call",
     labelnames=("worker_name", "agent_config_id"),
+    multiprocess_mode="livemostrecent",
 )
 ROOM_MOS_ESTIMATE = get_or_create_gauge(
     "cozmo_room_mos_estimate",
     "Latest estimated MOS score for the active call",
     labelnames=("worker_name", "agent_config_id"),
+    multiprocess_mode="livemostrecent",
 )
 
 _ACTIVE_JOBS: dict[str, int] = {}
@@ -294,6 +310,14 @@ def record_job_finished(worker_name: str, *, max_jobs: int) -> None:
         else:
             _ACTIVE_JOBS[worker_name] = active_jobs
     _set_active_job_metrics(worker_name, active_jobs=active_jobs, max_jobs=max_jobs)
+
+
+def initialize_worker_runtime_metrics(worker_name: str, *, max_jobs: int) -> None:
+    """Seed zero-value gauges so dashboards render stable values before the first call."""
+
+    with _ACTIVE_JOBS_LOCK:
+        _ACTIVE_JOBS.setdefault(worker_name, 0)
+    _set_active_job_metrics(worker_name, active_jobs=0, max_jobs=max_jobs)
 
 
 def record_call_setup(worker_name: str, agent_config_id: str, *, call_setup_ms: float) -> None:

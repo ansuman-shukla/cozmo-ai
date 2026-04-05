@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import json
 import logging
+import os
 from time import perf_counter
 from typing import Any
 
@@ -27,6 +28,7 @@ from app.config import export_provider_environment
 from app.observability.metrics import (
     calculate_perceived_rtt_ms,
     calculate_pipeline_rtt_ms,
+    initialize_worker_runtime_metrics,
     record_call_setup,
     record_greeting_publish,
     record_greeting_publish_failure,
@@ -44,6 +46,7 @@ from app.observability.quality import RoomQualityMonitor
 from app.observability.system import WorkerSystemMonitor
 from app.pipeline.interruption import InterruptionCoordinator
 from app.pipeline.llm import LlmAdapter, PromptBuilder
+from app.pipeline.rag import BackendKnowledgeRetriever, RetrievedChunk
 from app.pipeline.stt import SttAdapter
 from app.pipeline.tts import PlaceholderGreetingRenderer, build_initial_greeting
 from app.pipeline.tts import TtsAdapter
@@ -55,6 +58,15 @@ from app.transcripts import (
 )
 
 LOGGER = logging.getLogger(__name__)
+KB_ACK_DELAY_MS = 350
+KB_ACK_TEXT = "Just a moment while I check that."
+
+try:
+    from livekit.agents import Agent as _LiveKitAgent
+except Exception:  # pragma: no cover - exercised in isolated unit tests without the full SDK
+    class _LiveKitAgent:  # type: ignore[too-many-ancestors]
+        def __init__(self, *, instructions: str, **_kwargs: Any) -> None:
+            self.instructions = instructions
 
 
 @dataclass(slots=True)
@@ -65,6 +77,7 @@ class LiveSessionController:
     close_reason: str | None = None
     close_error: Any = None
     pending_tasks: set[asyncio.Task[Any]] = field(default_factory=set)
+    pending_kb_chunks: list[tuple[RetrievedChunk, ...]] = field(default_factory=list)
 
     def schedule(self, coroutine: Any) -> None:
         """Track a callback-driven coroutine spawned from a sync event handler."""
@@ -79,6 +92,18 @@ class LiveSessionController:
         if not self.pending_tasks:
             return
         await asyncio.gather(*tuple(self.pending_tasks), return_exceptions=True)
+
+    def queue_kb_chunks(self, chunks: tuple[RetrievedChunk, ...]) -> None:
+        """Associate one grounded KB result-set with the next assistant reply."""
+
+        self.pending_kb_chunks.append(chunks)
+
+    def consume_kb_chunks(self) -> tuple[RetrievedChunk, ...]:
+        """Return the KB result-set associated with the next assistant reply."""
+
+        if not self.pending_kb_chunks:
+            return ()
+        return self.pending_kb_chunks.pop(0)
 
 
 class GreetingPlaybackInterrupted(RuntimeError):
@@ -295,6 +320,7 @@ async def _persist_livekit_chat_message(
     message: Any,
     settings: Settings,
     runtime_config: AgentRuntimeConfig,
+    kb_chunks_used: tuple[RetrievedChunk, ...] = (),
 ) -> None:
     """Persist a user or assistant message emitted by the live AgentSession."""
 
@@ -319,6 +345,7 @@ async def _persist_livekit_chat_message(
         timestamp=_message_timestamp(getattr(message, "created_at", None)),
         interrupted=interrupted,
         latency=latency,
+        kb_chunks_used=kb_chunks_used if role == "assistant" else (),
         idempotency_key=f"livekit-message:{getattr(message, 'id', text)}",
     )
 
@@ -342,6 +369,84 @@ def _build_live_agent_instructions(runtime_config: AgentRuntimeConfig) -> str:
     )
 
 
+class GroundedLiveAgent(_LiveKitAgent):
+    """LiveKit voice agent that refreshes KB grounding on each caller turn."""
+
+    def __init__(
+        self,
+        *,
+        runtime_config: AgentRuntimeConfig,
+        retriever: BackendKnowledgeRetriever,
+        controller: LiveSessionController,
+        session: Any | None = None,
+        kb_ack_delay_ms: int = KB_ACK_DELAY_MS,
+        kb_ack_text: str = KB_ACK_TEXT,
+    ) -> None:
+        super().__init__(instructions=_build_live_agent_instructions(runtime_config))
+        self._runtime_config = runtime_config
+        self._retriever = retriever
+        self._controller = controller
+        self._session = session
+        self._kb_ack_delay_ms = max(int(kb_ack_delay_ms), 0)
+        self._kb_ack_text = str(kb_ack_text).strip() or KB_ACK_TEXT
+        self._prompt_builder = PromptBuilder()
+
+    async def on_user_turn_completed(self, turn_ctx: Any, new_message: Any) -> None:
+        """Refresh the turn prompt with retrieval hits before Gemini responds."""
+
+        user_text = " ".join(str(getattr(new_message, "text_content", "") or "").split()).strip()
+        retrieval_task = asyncio.create_task(
+            self._retriever.retrieve(
+                collection_name=self._runtime_config.kb_collection,
+                query_text=user_text,
+            )
+        )
+        filler_started = False
+        try:
+            knowledge_chunks = tuple(
+                await asyncio.wait_for(
+                    asyncio.shield(retrieval_task),
+                    timeout=self._kb_ack_delay_ms / 1000.0 if self._kb_ack_delay_ms else None,
+                )
+            )
+        except asyncio.TimeoutError:
+            if self._session is not None:
+                try:
+                    self._session.say(
+                        self._kb_ack_text,
+                        add_to_chat_ctx=False,
+                        allow_interruptions=True,
+                    )
+                    filler_started = True
+                except Exception:
+                    LOGGER.warning(
+                        "failed to publish kb acknowledgement filler",
+                        extra={"agent_config_id": self._runtime_config.config_id},
+                    )
+            knowledge_chunks = tuple(await retrieval_task)
+
+        self._controller.queue_kb_chunks(knowledge_chunks)
+        grounded_prompt = self._prompt_builder.build_system_prompt(
+            runtime_config=self._runtime_config,
+            knowledge_chunks=knowledge_chunks,
+        )
+
+        from livekit.agents import llm
+
+        preserved_items = []
+        for item in list(getattr(turn_ctx, "items", []) or []):
+            if isinstance(item, llm.ChatMessage) and item.role in {"system", "developer"}:
+                continue
+            preserved_items.append(item)
+        turn_ctx.items = preserved_items
+        turn_ctx.add_message(
+            role="system",
+            content=grounded_prompt,
+            created_at=0.0,
+            extra={"cozmo_grounded": True, "cozmo_kb_ack": filler_started},
+        )
+
+
 def _create_live_agent_session(settings: Settings) -> Any:
     """Create a real AgentSession backed by the configured providers."""
 
@@ -352,6 +457,7 @@ def _create_live_agent_session(settings: Settings) -> Any:
         stt=SttAdapter.from_settings(settings).create_provider(),
         llm=LlmAdapter.from_settings(settings).create_provider(),
         tts=TtsAdapter.from_settings(settings).create_provider(),
+        preemptive_generation=False,
         conn_options=SessionConnectOptions(
             stt_conn_options=APIConnectOptions(timeout=settings.timeout_stt_ms / 1000.0),
             llm_conn_options=APIConnectOptions(timeout=settings.timeout_llm_ms / 1000.0),
@@ -360,12 +466,21 @@ def _create_live_agent_session(settings: Settings) -> Any:
     )
 
 
-def _build_live_agent(runtime_config: AgentRuntimeConfig) -> Any:
+def _build_live_agent(
+    runtime_config: AgentRuntimeConfig,
+    *,
+    settings: Settings,
+    controller: LiveSessionController,
+    session: Any,
+) -> Any:
     """Create the LiveKit Agent definition for one inbound call."""
 
-    from livekit.agents import Agent
-
-    return Agent(instructions=_build_live_agent_instructions(runtime_config))
+    return GroundedLiveAgent(
+        runtime_config=runtime_config,
+        retriever=BackendKnowledgeRetriever.from_settings(settings),
+        controller=controller,
+        session=session,
+    )
 
 
 def _install_live_session_handlers(
@@ -382,12 +497,16 @@ def _install_live_session_handlers(
         message = getattr(event, "item", None)
         if message is None:
             return
+        kb_chunks_used: tuple[RetrievedChunk, ...] = ()
+        if getattr(message, "role", None) == "assistant":
+            kb_chunks_used = controller.consume_kb_chunks()
         controller.schedule(
             _persist_livekit_chat_message(
                 recorder,
                 message=message,
                 settings=settings,
                 runtime_config=runtime_config,
+                kb_chunks_used=kb_chunks_used,
             )
         )
 
@@ -436,7 +555,12 @@ async def _run_live_agent_loop(
     )
 
     await session.start(
-        _build_live_agent(runtime_config),
+        _build_live_agent(
+            runtime_config,
+            settings=settings,
+            controller=controller,
+            session=session,
+        ),
         room=ctx.room,
         room_options=room_io.RoomOptions(
             text_input=False,
@@ -522,10 +646,16 @@ async def _bootstrap_job(
     await local_participant.set_metadata(
         json.dumps(resolved.participant_metadata(), separators=(",", ":"))
     )
+    call_setup_ms = (perf_counter() - setup_started) * 1000
     record_call_setup(
         settings.worker_name,
         resolved.agent_config.config_id,
-        call_setup_ms=(perf_counter() - setup_started) * 1000,
+        call_setup_ms=call_setup_ms,
+    )
+    await asyncio.to_thread(
+        call_state_store.repository.update_call_setup_metrics,
+        resolved.room_name,
+        call_setup_ms,
     )
     transcript_recorder = TranscriptRecorder.from_sink(
         room_name=resolved.room_name,
@@ -714,12 +844,22 @@ def run_worker() -> None:
     """Start the LiveKit worker runtime."""
 
     from livekit.agents import cli
-    from prometheus_client import start_http_server
+    from prometheus_client import CollectorRegistry, multiprocess, start_http_server
 
     settings = get_settings()
     export_provider_environment(settings)
     if settings.metrics_enabled:
-        start_http_server(settings.metrics_port)
+        initialize_worker_runtime_metrics(
+            settings.worker_name,
+            max_jobs=settings.max_jobs_per_worker_server,
+        )
+        multiprocess_dir = os.environ.get("PROMETHEUS_MULTIPROC_DIR")
+        if multiprocess_dir:
+            registry = CollectorRegistry()
+            multiprocess.MultiProcessCollector(registry)
+            start_http_server(settings.metrics_port, registry=registry)
+        else:
+            start_http_server(settings.metrics_port)
         WorkerSystemMonitor(
             worker_name=settings.worker_name,
             poll_interval_ms=settings.system_metrics_poll_interval_ms,

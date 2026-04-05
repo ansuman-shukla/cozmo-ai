@@ -1,4 +1,6 @@
-.PHONY: sync lock lint unit integration e2e load backend agent compose-config up down
+.PHONY: sync lock lint unit integration e2e load backend agent compose-config up down kb-seed
+
+KB_API ?= http://127.0.0.1:8000
 
 sync:
 	uv sync --all-packages --dev
@@ -20,6 +22,11 @@ e2e:
 
 load:
 	uv run python -m tests.load.runner --profiles tests/load/profiles.json --output-dir artifacts/load
+
+kb-seed:
+	curl -X POST $(KB_API)/knowledge/ingest \
+		-H 'Content-Type: application/json' \
+		--data @knowledge/fixtures/main-faq-ingest.json
 
 backend:
 	uv run --directory backend uvicorn app.main:app --host 0.0.0.0 --port 8000

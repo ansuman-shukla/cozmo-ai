@@ -23,6 +23,9 @@ class CallStateSink(Protocol):
     def update_voice_quality(self, room_name: str, quality: VoiceQualityMetrics) -> Any:
         """Persist the latest aggregated room-quality snapshot for the room."""
 
+    def update_call_setup_metrics(self, room_name: str, call_setup_ms: float) -> Any:
+        """Persist the call setup timing summary for the room."""
+
 
 @dataclass(slots=True)
 class MongoCallStateRepository:
@@ -66,6 +69,15 @@ class MongoCallStateRepository:
                     "voice_quality.mos_estimate": quality.mos_estimate,
                 }
             },
+        )
+        return self.collection.find_one({"room_name": room_name})
+
+    def update_call_setup_metrics(self, room_name: str, call_setup_ms: float) -> Any:
+        """Persist the call setup timing summary for a room."""
+
+        self.collection.update_one(
+            {"room_name": room_name},
+            {"$set": {"metrics_summary.call_setup_ms": call_setup_ms}},
         )
         return self.collection.find_one({"room_name": room_name})
 

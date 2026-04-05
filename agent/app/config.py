@@ -3,7 +3,7 @@
 from functools import lru_cache
 import os
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,6 +12,8 @@ from cozmo_contracts.runtime import RetrievalSettings, TimeoutSettings
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ROOT_ENV_FILE = REPO_ROOT / ".env"
+MIN_GEMINI_LLM_TIMEOUT_MS = 10_000
+HOST_ONLY_SERVICE_ALIASES = {"backend", "host.docker.internal"}
 
 
 def resolve_mongo_database_name(mongo_uri: str, explicit_database: str | None = None) -> str:
@@ -29,6 +31,23 @@ def resolve_mongo_database_name(mongo_uri: str, explicit_database: str | None = 
         return "cozmo"
 
     return database_segment.split(".", maxsplit=1)[0] or "cozmo"
+
+
+def resolve_backend_base_url(base_url: str) -> str:
+    """Rewrite Docker-only backend aliases to localhost when the agent runs on the host."""
+
+    normalized = str(base_url or "").strip() or "http://localhost:8000"
+    if os.path.exists("/.dockerenv"):
+        return normalized
+
+    parsed = urlsplit(normalized)
+    if (parsed.hostname or "").strip().lower() not in HOST_ONLY_SERVICE_ALIASES:
+        return normalized
+
+    netloc = "127.0.0.1"
+    if parsed.port is not None:
+        netloc = f"{netloc}:{parsed.port}"
+    return urlunsplit((parsed.scheme or "http", netloc, parsed.path, parsed.query, parsed.fragment))
 
 
 class Settings(BaseSettings):
@@ -220,6 +239,16 @@ class Settings(BaseSettings):
     def populate_database_name(self) -> "Settings":
         """Fill the effective Mongo database name from the URI when needed."""
 
+        normalized_provider = str(self.llm_provider).strip().lower()
+        normalized_model = str(self.llm_model).strip().lower()
+        if normalized_provider == "openai" and normalized_model.startswith("gemini-"):
+            self.llm_provider = "gemini"
+            normalized_provider = "gemini"
+        if normalized_provider == "gemini" and normalized_model.startswith("gpt-"):
+            self.llm_model = "gemini-3-flash-preview"
+        if normalized_provider == "gemini" and self.timeout_llm_ms < MIN_GEMINI_LLM_TIMEOUT_MS:
+            self.timeout_llm_ms = MIN_GEMINI_LLM_TIMEOUT_MS
+        self.backend_base_url = resolve_backend_base_url(self.backend_base_url)
         self.mongo_database = resolve_mongo_database_name(self.mongo_uri, self.mongo_database)
         return self
 

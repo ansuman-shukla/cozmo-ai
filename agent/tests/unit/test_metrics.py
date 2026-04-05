@@ -106,6 +106,7 @@ def test_latency_and_setup_metrics_use_stable_low_cardinality_labels() -> None:
             perceived_rtt_ms=385.0,
         )
 
+        metrics.initialize_worker_runtime_metrics("cozmo-agent-obsv", max_jobs=8)
         metrics.record_turn_latency_metrics("cozmo-agent-obsv", "main-inbound", latency)
         metrics.record_call_setup("cozmo-agent-obsv", "main-inbound", call_setup_ms=640.0)
         metrics.record_job_started("cozmo-agent-obsv", max_jobs=8)

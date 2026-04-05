@@ -51,6 +51,7 @@ def test_worker_prometheus_scrape_exposes_required_metric_set() -> None:
 
         worker_name = "cozmo-agent-scrape"
         config_id = "main-inbound"
+        metrics.initialize_worker_runtime_metrics(worker_name, max_jobs=8)
         metrics.record_worker_start(worker_name)
         metrics.record_job_started(worker_name, max_jobs=8)
         metrics.record_call_setup(worker_name, config_id, call_setup_ms=850.0)

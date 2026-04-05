@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.middleware.logging import configure_logging
 from app.routers import agents, calls, health, knowledge, metrics, webhooks
 from app.services.agent_config_service import AgentConfigService
+from app.services.knowledge_service import KnowledgeService
 from app.services.livekit_service import LiveKitService
 from app.services.livekit_webhook_auth import LiveKitWebhookVerifier
 from app.services.mongo import MongoResources
@@ -31,10 +32,15 @@ def create_app() -> FastAPI:
         application.state.session_service = None
         application.state.agent_config_service = None
         application.state.webhook_service = None
+        application.state.knowledge_service = None
         application.state.livekit_service = LiveKitService.from_settings(settings)
         application.state.livekit_webhook_verifier = LiveKitWebhookVerifier.from_settings(settings)
         application.state.telephony_setup = application.state.livekit_service.validation_report()
         application.state.mongo_ready = False
+        try:
+            application.state.knowledge_service = KnowledgeService.from_settings(settings)
+        except Exception:
+            LOGGER.exception("Failed to initialize knowledge service")
 
         try:
             mongo_resources = MongoResources.from_connection_string(

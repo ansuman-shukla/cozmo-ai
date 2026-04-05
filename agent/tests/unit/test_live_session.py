@@ -1,3 +1,4 @@
+import asyncio
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 import sys
@@ -83,7 +84,7 @@ class FakeSession:
             "record": record,
         }
 
-    def say(self, text: str, *, add_to_chat_ctx: bool = True):
+    def say(self, text: str, *, add_to_chat_ctx: bool = True, allow_interruptions=None):
         self.say_calls.append((text, add_to_chat_ctx))
         self.emit(
             "conversation_item_added",
@@ -129,6 +130,33 @@ class FakeRoom:
 
     def on(self, event: str, callback) -> None:
         self.handlers[event] = callback
+
+
+class FakeChatMessage:
+    def __init__(self, *, role: str, content, created_at: float = 1.0, extra=None) -> None:
+        self.role = role
+        self.content = [content] if isinstance(content, str) else list(content)
+        self.created_at = created_at
+        self.extra = dict(extra or {})
+
+    @property
+    def text_content(self) -> str:
+        return "\n".join(part for part in self.content if isinstance(part, str))
+
+
+class FakeChatContext:
+    def __init__(self) -> None:
+        self.items = []
+
+    def add_message(self, *, role: str, content, created_at: float = 1.0, extra=None, **_kwargs):
+        message = FakeChatMessage(role=role, content=content, created_at=created_at, extra=extra)
+        insert_at = len(self.items)
+        for index, item in enumerate(self.items):
+            if getattr(item, "created_at", created_at) > created_at:
+                insert_at = index
+                break
+        self.items.insert(insert_at, message)
+        return message
 
 
 def counter_total(counter, **labels) -> float:
@@ -311,7 +339,11 @@ async def test_run_live_agent_loop_starts_session_and_publishes_greeting(monkeyp
 
         fake_session = FakeSession()
         monkeypatch.setattr(job, "_create_live_agent_session", lambda settings: fake_session)
-        monkeypatch.setattr(job, "_build_live_agent", lambda runtime_config: {"instructions": "stub"})
+        monkeypatch.setattr(
+            job,
+            "_build_live_agent",
+            lambda runtime_config, *, settings, controller, session: {"instructions": "stub"},
+        )
 
         settings = SimpleNamespace(
             worker_name="cozmo-agent-1",
@@ -363,5 +395,156 @@ async def test_run_live_agent_loop_starts_session_and_publishes_greeting(monkeyp
         assert [turn.speaker.value for turn in sink.turns] == ["agent"]
         assert sink.turns[0].text == "Hello, you've reached Main Reception. How can I help you today?"
         assert fake_session.closed is True
+    finally:
+        remove_repo_paths(*inserted_paths)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_grounded_live_agent_injects_retrieved_kb_context() -> None:
+    inserted_paths = add_repo_paths()
+
+    try:
+        livekit_module = ModuleType("livekit")
+        livekit_agents_module = ModuleType("livekit.agents")
+        livekit_llm_module = ModuleType("livekit.agents.llm")
+        livekit_llm_module.ChatMessage = FakeChatMessage
+        livekit_agents_module.llm = livekit_llm_module
+
+        class FakeAgent:
+            def __init__(self, *, instructions: str) -> None:
+                self.instructions = instructions
+
+        livekit_agents_module.Agent = FakeAgent
+        livekit_module.agents = livekit_agents_module
+        sys.modules["livekit"] = livekit_module
+        sys.modules["livekit.agents"] = livekit_agents_module
+        sys.modules["livekit.agents.llm"] = livekit_llm_module
+
+        job = load_module("agent_live_job_module", "app/job.py")
+        from app.pipeline.rag import RetrievedChunk
+        from cozmo_contracts.runtime import AgentRuntimeConfig
+
+        class FakeRetriever:
+            async def retrieve(self, *, collection_name: str, query_text: str, top_k=None, min_score=None):
+                assert collection_name == "main-faq"
+                assert query_text == "What does the starter plan cost?"
+                return [
+                    RetrievedChunk(
+                        chunk_id="pricing:chunk:0",
+                        text="Question: What does the starter plan cost?\nAnswer: The starter plan costs 29 US dollars per month.",
+                        score=0.82,
+                    )
+                ]
+
+        runtime_config = AgentRuntimeConfig(
+            config_id="main-inbound",
+            did="+16625640501",
+            agent_name="Main Reception",
+            persona_prompt="Be concise and helpful on the phone.",
+            kb_collection="main-faq",
+            llm_provider="gemini",
+            llm_model="gemini-3-flash-preview",
+            tts_provider="deepgram",
+            tts_model="aura-2-thalia-en",
+            tts_voice="thalia",
+            escalation_triggers=["human"],
+        )
+        controller = job.LiveSessionController()
+        agent = job.GroundedLiveAgent(
+            runtime_config=runtime_config,
+            retriever=FakeRetriever(),
+            controller=controller,
+        )
+        turn_ctx = FakeChatContext()
+        turn_ctx.add_message(role="system", content="stale instructions", created_at=0.5)
+        turn_ctx.add_message(role="user", content="Earlier turn", created_at=1.0)
+        new_message = FakeChatMessage(
+            role="user",
+            content="What does the starter plan cost?",
+            created_at=2.0,
+        )
+
+        await agent.on_user_turn_completed(turn_ctx, new_message)
+
+        system_messages = [item for item in turn_ctx.items if item.role == "system"]
+        assert len(system_messages) == 1
+        assert "29 US dollars per month" in system_messages[0].text_content
+        assert [item.role for item in turn_ctx.items] == ["system", "user"]
+        assert controller.consume_kb_chunks()[0].chunk_id == "pricing:chunk:0"
+    finally:
+        remove_repo_paths(*inserted_paths)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_grounded_live_agent_speaks_short_ack_when_retrieval_is_slow() -> None:
+    inserted_paths = add_repo_paths()
+
+    try:
+        livekit_module = ModuleType("livekit")
+        livekit_agents_module = ModuleType("livekit.agents")
+        livekit_llm_module = ModuleType("livekit.agents.llm")
+        livekit_llm_module.ChatMessage = FakeChatMessage
+        livekit_agents_module.llm = livekit_llm_module
+
+        class FakeAgent:
+            def __init__(self, *, instructions: str) -> None:
+                self.instructions = instructions
+
+        livekit_agents_module.Agent = FakeAgent
+        livekit_module.agents = livekit_agents_module
+        sys.modules["livekit"] = livekit_module
+        sys.modules["livekit.agents"] = livekit_agents_module
+        sys.modules["livekit.agents.llm"] = livekit_llm_module
+
+        job = load_module("agent_live_job_module", "app/job.py")
+        from app.pipeline.rag import RetrievedChunk
+        from cozmo_contracts.runtime import AgentRuntimeConfig
+
+        class SlowRetriever:
+            async def retrieve(self, *, collection_name: str, query_text: str, top_k=None, min_score=None):
+                await asyncio.sleep(0.01)
+                return [
+                    RetrievedChunk(
+                        chunk_id="pricing:chunk:0",
+                        text="The starter plan costs 29 US dollars per month.",
+                        score=0.82,
+                    )
+                ]
+
+        runtime_config = AgentRuntimeConfig(
+            config_id="main-inbound",
+            did="+16625640501",
+            agent_name="Main Reception",
+            persona_prompt="Be concise and helpful on the phone.",
+            kb_collection="main-faq",
+            llm_provider="gemini",
+            llm_model="gemini-3-flash-preview",
+            tts_provider="deepgram",
+            tts_model="aura-2-thalia-en",
+            tts_voice="thalia",
+            escalation_triggers=["human"],
+        )
+        controller = job.LiveSessionController()
+        fake_session = FakeSession()
+        agent = job.GroundedLiveAgent(
+            runtime_config=runtime_config,
+            retriever=SlowRetriever(),
+            controller=controller,
+            session=fake_session,
+            kb_ack_delay_ms=1,
+        )
+        turn_ctx = FakeChatContext()
+        new_message = FakeChatMessage(
+            role="user",
+            content="What does the starter plan cost?",
+            created_at=2.0,
+        )
+
+        await agent.on_user_turn_completed(turn_ctx, new_message)
+
+        assert fake_session.say_calls == [(job.KB_ACK_TEXT, False)]
+        assert controller.consume_kb_chunks()[0].chunk_id == "pricing:chunk:0"
     finally:
         remove_repo_paths(*inserted_paths)
