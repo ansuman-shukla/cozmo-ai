@@ -423,6 +423,12 @@ Capacity planning is based on:
 - retrieval latency target is modest
 - swap-out to Qdrant or another store is a future concern, not a call-flow concern
 
+**Current implementation status**
+
+- the repository already has config fields for `CHROMADB_*` and `EMBEDDING_MODEL`
+- the current backend knowledge service and embedding adapter are placeholders only
+- real ChromaDB ingestion, embedding generation, and live retrieval are not wired yet
+
 ### 4.6 Redis
 
 **Role**
@@ -552,20 +558,19 @@ Step 13: Agent publishes greeting audio
 Current implementation note:
 
 - Steps 9 through 13 are now implemented in the worker bootstrap path
-- the current Step 13 behavior publishes a deterministic short greeting-audio placeholder track after config resolution
-- the worker now persists that initial greeting as the first ordered `agent` transcript turn in Mongo
+- after config resolution, the worker now starts a real LiveKit `AgentSession` using Gemini 3 Flash text plus Deepgram STT/TTS
+- the worker now persists the initial greeting and later user/agent turns from live `AgentSession` conversation events into Mongo transcripts
 - the worker now has a stateful turn detector with explicit speech-start and speech-end events
-- the worker now stops queued greeting playback when a remote participant becomes an active speaker and marks that greeting turn as interrupted
+- the worker now stops queued placeholder greeting playback when a remote participant becomes an active speaker and also records interrupted assistant turns from the live `AgentSession` path
 - interruption metrics now track response interruptions and interrupted agent turns
-- the interruption path now has integration coverage at the bootstrap level, including caller-speech interruption during greeting playback
+- the interruption path now has integration coverage at the bootstrap level for both greeting interruption and the live session transcript path
 - the mocked conversational pipeline now also carries interrupted agent turns forward correctly so the next caller turn can be processed without corrupting prompt history
 - the conversational policy layer now supports a grounded no-answer fallback, a scripted trust objection branch, and a transfer branch with validated transfer targets and call-state updates
 - transfer execution is still modeled behind a provider abstraction; the current implementation validates payloads and state transitions before a real SIP/LK handoff is wired
 - the worker now claims room recovery exactly once after a recoverable crash, builds a short resume prompt from transcript history, and increments `recovery_count` on the persisted call session
 - transcript writes now retry transient failures and dead-letter unrecoverable payloads into Mongo for later replay, and transcript-side idempotency keys suppress duplicate side effects
 - Gemini Flash text and Deepgram speech adapter scaffolding now exist in the worker pipeline layer
-- the worker pipeline now has a mocked-provider turn orchestrator for STT -> LLM -> TTS integration coverage, stable TTS text chunking, and per-turn latency metrics
-- provider-backed TTS is still pending and will replace that placeholder path later in the voice pipeline work
+- the worker pipeline still keeps a mocked-provider turn orchestrator for isolated STT -> LLM -> TTS policy coverage and latency assertions
 
 ### 6.2 Critical Observations
 

@@ -1,3 +1,4 @@
+import asyncio
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 import sys
@@ -140,6 +141,69 @@ class FakeTranscriptRepository:
         return None
 
 
+class FakeSession:
+    def __init__(self) -> None:
+        self.handlers = {}
+        self.started = None
+        self.say_calls = []
+        self.closed = False
+
+    def on(self, event: str, callback) -> None:
+        self.handlers[event] = callback
+
+    def emit(self, event: str, payload) -> None:
+        callback = self.handlers.get(event)
+        if callback is not None:
+            callback(payload)
+
+    async def start(self, agent, *, room, room_options, record) -> None:
+        self.started = {
+            "agent": agent,
+            "room": room,
+            "room_options": room_options,
+            "record": record,
+        }
+
+    def say(self, text: str, *, add_to_chat_ctx: bool = True):
+        self.say_calls.append((text, add_to_chat_ctx))
+        self.emit(
+            "conversation_item_added",
+            SimpleNamespace(
+                item=SimpleNamespace(
+                    id="assistant-greeting",
+                    role="assistant",
+                    text_content=text,
+                    interrupted=True,
+                    created_at=1710000000.0,
+                    metrics={"llm_node_ttft": 0.25, "tts_node_ttfb": 0.35, "e2e_latency": 0.8},
+                )
+            ),
+        )
+        self.emit(
+            "close",
+            SimpleNamespace(reason=SimpleNamespace(value="participant_disconnected"), error=None),
+        )
+        return FakeSpeechHandle(interrupted=True)
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class FakeSpeechHandle:
+    def __init__(self, *, interrupted: bool) -> None:
+        self.interrupted = interrupted
+
+    async def wait_for_playout(self):
+        return None
+
+    def __await__(self):
+        async def _await_impl():
+            await self.wait_for_playout()
+            return self
+
+        return _await_impl().__await__()
+
+
 def counter_value(counter, **labels) -> float:
     for metric in counter.collect():
         for sample in metric.samples:
@@ -158,13 +222,14 @@ async def test_bootstrap_job_interrupts_greeting_and_marks_turn() -> None:
     try:
         livekit_module = ModuleType("livekit")
         livekit_module.rtc = SimpleNamespace(
-            AudioSource=FakeAudioSource,
-            LocalAudioTrack=FakeLocalAudioTrack,
-            AudioFrame=FakeAudioFrame,
             ParticipantKind=SimpleNamespace(PARTICIPANT_KIND_SIP="SIP"),
         )
         agents_module = ModuleType("livekit.agents")
         agents_module.AutoSubscribe = SimpleNamespace(AUDIO_ONLY="audio_only")
+        agents_module.room_io = SimpleNamespace(
+            RoomOptions=lambda **kwargs: SimpleNamespace(**kwargs)
+        )
+        livekit_module.agents = agents_module
         sys.modules["livekit"] = livekit_module
         sys.modules["livekit.agents"] = agents_module
 
@@ -172,14 +237,23 @@ async def test_bootstrap_job_interrupts_greeting_and_marks_turn() -> None:
         metrics_module = load_module("agent_metrics_module", "app/observability/metrics.py")
         from app.bootstrap import ResolvedCallContext
         from cozmo_contracts.models import AgentConfigRecord
+        from cozmo_contracts.runtime import RetrievalSettings, TimeoutSettings
 
         transcript_repository = FakeTranscriptRepository()
         room = FakeRoom()
-        FakeAudioSource.room = room
-        FakeAudioSource.instances.clear()
+        fake_session = FakeSession()
         settings = SimpleNamespace(
             worker_name="cozmo-agent-1",
             mongo_database="cozmo",
+            room_quality_poll_interval_ms=5000,
+            max_history_turns=10,
+            llm_provider="gemini",
+            llm_model="gemini-3-flash-preview",
+            tts_provider="deepgram",
+            tts_model="aura-2-thalia-en",
+            tts_voice="thalia",
+            retrieval_settings=lambda: RetrievalSettings(),
+            timeout_settings=lambda: TimeoutSettings(),
         )
         ctx = SimpleNamespace(
             room=room,
@@ -245,6 +319,17 @@ async def test_bootstrap_job_interrupts_greeting_and_marks_turn() -> None:
         job.MongoTranscriptStore.from_connection = classmethod(
             lambda cls, **kwargs: SimpleNamespace(repository=transcript_repository)
         )
+        job._create_live_agent_session = lambda settings: fake_session
+        job._build_live_agent = lambda runtime_config: {"instructions": "stub"}
+
+        class FakeQualityMonitor:
+            def __init__(self, **kwargs) -> None:
+                self.kwargs = kwargs
+
+            async def run(self) -> None:
+                await asyncio.Future()
+
+        job.RoomQualityMonitor = FakeQualityMonitor
 
         before_interrupts = counter_value(
             metrics_module.RESPONSE_INTERRUPTS,
@@ -263,6 +348,7 @@ async def test_bootstrap_job_interrupts_greeting_and_marks_turn() -> None:
             store=SimpleNamespace(client=object(), repository=object()),
             transcript_store=SimpleNamespace(repository=transcript_repository),
             dead_letter_store=SimpleNamespace(repository=object()),
+            call_state_store=SimpleNamespace(repository=object()),
         )
 
         after_interrupts = counter_value(
@@ -276,16 +362,15 @@ async def test_bootstrap_job_interrupts_greeting_and_marks_turn() -> None:
             agent_config_id="main-inbound",
         )
 
-        assert len(FakeAudioSource.instances) == 1
-        assert len(FakeAudioSource.instances[0].frames) == 1
-        assert FakeAudioSource.instances[0].cleared is True
-        assert FakeAudioSource.instances[0].waited is False
-        assert room.local_participant.attributes["cozmo.greeting_state"] == "interrupted"
+        assert fake_session.started["room"] is room
+        assert fake_session.started["room_options"].participant_identity == "sip-caller-1"
+        assert fake_session.say_calls == [
+            ("Hello, you've reached Main Reception. How can I help you today?", True)
+        ]
         assert len(transcript_repository.turns) == 1
         assert transcript_repository.turns[0].speaker.value == "agent"
         assert transcript_repository.turns[0].interrupted is True
         assert after_interrupts == before_interrupts + 1
         assert after_interrupted_turns == before_interrupted_turns + 1
     finally:
-        FakeAudioSource.room = None
         remove_repo_paths(*inserted_paths)

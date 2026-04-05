@@ -114,6 +114,12 @@ Integration tests
 - [ ] retrieval returns stable top-k results for fixture queries
 - [ ] ingestion job status transitions work end to end
 
+Implementation notes as of April 5, 2026
+
+- the config surface for `CHROMADB_*`, retrieval thresholds, and `EMBEDDING_MODEL` exists in backend and agent settings
+- the current `KnowledgeService` and `EmbeddingAdapter` code paths are placeholders only
+- no ChromaDB ingestion, vector writes, embedding generation, or live retrieval path is implemented yet
+
 ---
 
 ## 6. Agent Worker Bootstrap
@@ -139,8 +145,9 @@ Implementation notes as of April 5, 2026
 - the worker now registers a real LiveKit `AgentServer` against the configured project
 - inbound jobs are accepted only for rooms matching `CALL_ROOM_PREFIX`
 - bootstrap waits for the SIP participant, parses DID and ANI, loads the active `agent_config` from Mongo, and annotates the local participant with resolved context
-- after config resolution, the worker now publishes a short deterministic greeting-audio placeholder track and annotates participant state with the greeting text
-- full provider-backed TTS and end-to-end dispatched-room integration coverage are still pending
+- after config resolution, the worker now starts a real `AgentSession` against the room using Gemini 3 Flash text plus Deepgram STT/TTS
+- the initial greeting now runs through the provider-backed session instead of the earlier placeholder PCM track
+- transcript turns are now persisted from live `AgentSession` conversation events as well as the mocked turn-pipeline tests
 
 ---
 
@@ -167,12 +174,12 @@ Implementation notes as of April 5, 2026
 
 - the worker now has a stateful turn detector with speech-start and speech-end events plus an RMS fallback for raw PCM frames
 - the worker now has typed in-memory conversation state, retrieval-hit normalization, and provider wrapper classes for Gemini Flash text plus Deepgram STT/TTS
-- the worker now persists transcript turns through a Mongo-backed recorder, and the initial greeting is stored as the first `agent` turn
+- the worker now persists transcript turns through a Mongo-backed recorder, and the initial greeting is stored as the first `agent` turn on the real live session path
 - the pipeline layer now includes a mocked-provider `TurnPipeline` that runs STT -> prompt build -> Gemini text completion -> stable TTS chunking -> transcript persistence
 - per-turn latency metrics are now emitted under stage labels for STT, LLM, TTS, and total pipeline RTT
 - the current LLM target is `gemini-3-flash-preview`
 - the current speech-provider target is Deepgram for both STT and TTS
-- the live per-turn media loop is still pending; the new adapters are scaffolding for the next integration slice
+- the live room-media loop is now implemented through LiveKit `AgentSession`, while the mocked `TurnPipeline` remains the isolated test harness for policy logic
 
 ---
 
@@ -195,12 +202,12 @@ Integration tests
 
 Implementation notes as of April 5, 2026
 
-- the worker now installs an interruption coordinator on the live job path and listens for remote active-speaker changes during greeting playback
+- the worker now supports interruption both in the earlier greeting-placeholder path and in the provider-backed `AgentSession` path
 - queued greeting audio frames are cleared immediately when caller speech interrupts playback
-- interrupted greeting turns are now marked in Mongo transcripts and counted in interruption metrics
-- integration coverage now exercises the bootstrap path end to end through greeting publish, caller speech interruption, queue clearing, transcript marking, and interruption metrics
+- interrupted assistant turns from the live `AgentSession` are now persisted with `interrupted=True` and counted in interruption metrics
+- integration coverage now exercises the bootstrap path end to end through live session startup, greeting publish, transcript persistence, and interruption accounting
 - the mocked conversational turn pipeline now preserves interrupted agent turns in history and successfully processes the caller's next turn with the same pipeline instance
-- full barge-in for the later provider-backed conversational TTS loop is still pending with the real streaming voice path
+- full provider-specific tuning for barge-in thresholds may still need production tuning, but the real streaming voice path is now wired
 
 ---
 
