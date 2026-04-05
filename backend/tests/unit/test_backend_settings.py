@@ -115,3 +115,16 @@ def test_backend_settings_raise_gemini_llm_timeout_to_supported_minimum(
     settings = config.Settings(_env_file=None)
 
     assert settings.timeout_llm_ms == 10000
+
+
+@pytest.mark.unit
+def test_backend_settings_rewrite_chroma_service_alias_to_localhost_on_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_module("backend_config_chroma_host", "app/config.py")
+    monkeypatch.setenv("COZMO_BACKEND_CHROMA_URI", "http://chromadb:8000")
+    monkeypatch.setattr(config.os.path, "exists", lambda path: False if path == "/.dockerenv" else False)
+
+    settings = config.Settings(_env_file=None)
+
+    assert settings.chroma_uri == "http://127.0.0.1:8001"

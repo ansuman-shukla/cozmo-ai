@@ -51,6 +51,17 @@ def _extract_nested_stat(sample: Any, field_name: str) -> Any | None:
     return nested
 
 
+def _nested_value(sample: Any, *path: str) -> Any | None:
+    """Return a nested attribute when every hop is populated."""
+
+    current = sample
+    for field_name in path:
+        current = _extract_nested_stat(current, field_name)
+        if current is None:
+            return None
+    return current
+
+
 def estimate_mos(
     *,
     jitter_ms: float | None,
@@ -89,27 +100,50 @@ def summarize_room_quality(rtc_stats: Any) -> VoiceQualityMetrics:
     ):
         inbound = _extract_nested_stat(sample, "inbound_rtp")
         if inbound is not None:
-            jitter = getattr(inbound, "jitter", None)
+            inbound_received = _nested_value(inbound, "received")
+            jitter = getattr(inbound_received, "jitter", None) if inbound_received is not None else getattr(inbound, "jitter", None)
             if jitter is not None:
                 jitter_ms_values.append(float(jitter) * 1000.0)
-            packets_received = getattr(inbound, "packets_received", None)
-            packets_lost = getattr(inbound, "packets_lost", None)
+            packets_received = (
+                getattr(inbound_received, "packets_received", None)
+                if inbound_received is not None
+                else getattr(inbound, "packets_received", None)
+            )
+            packets_lost = (
+                getattr(inbound_received, "packets_lost", None)
+                if inbound_received is not None
+                else getattr(inbound, "packets_lost", None)
+            )
             if packets_received is not None and packets_lost is not None:
                 packet_totals["received"] += float(packets_received)
                 packet_totals["lost"] += float(packets_lost)
 
         remote_inbound = _extract_nested_stat(sample, "remote_inbound_rtp")
         if remote_inbound is not None:
-            round_trip_time = getattr(remote_inbound, "round_trip_time", None)
+            remote_inbound_stats = _nested_value(remote_inbound, "remote_inbound")
+            round_trip_time = (
+                getattr(remote_inbound_stats, "round_trip_time", None)
+                if remote_inbound_stats is not None
+                else getattr(remote_inbound, "round_trip_time", None)
+            )
             if round_trip_time is not None:
                 round_trip_ms_values.append(float(round_trip_time) * 1000.0)
-            fraction_lost = getattr(remote_inbound, "fraction_lost", None)
+            fraction_lost = (
+                getattr(remote_inbound_stats, "fraction_lost", None)
+                if remote_inbound_stats is not None
+                else getattr(remote_inbound, "fraction_lost", None)
+            )
             if fraction_lost is not None:
                 fallback_loss_pct.append(float(fraction_lost) * 100.0)
 
         candidate_pair = _extract_nested_stat(sample, "candidate_pair")
         if candidate_pair is not None:
-            current_round_trip_time = getattr(candidate_pair, "current_round_trip_time", None)
+            candidate_pair_stats = _nested_value(candidate_pair, "candidate_pair")
+            current_round_trip_time = (
+                getattr(candidate_pair_stats, "current_round_trip_time", None)
+                if candidate_pair_stats is not None
+                else getattr(candidate_pair, "current_round_trip_time", None)
+            )
             if current_round_trip_time is not None:
                 round_trip_ms_values.append(float(current_round_trip_time) * 1000.0)
 

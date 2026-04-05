@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -13,6 +14,9 @@ from cozmo_contracts.models import CallDisposition, CallSessionStatus, VoiceQual
 
 class CallStateSink(Protocol):
     """Protocol for updating call-session transfer state from the worker."""
+
+    def mark_active(self, room_name: str, connected_at: datetime | None = None) -> Any:
+        """Mark the call as active once the worker has joined and bootstrapped it."""
 
     def mark_transferred(self, room_name: str, transfer_target: str) -> Any:
         """Mark the active call as transferred to the supplied target."""
@@ -32,6 +36,27 @@ class MongoCallStateRepository:
     """Mongo-backed call-session state updates."""
 
     collection: Collection[Any]
+
+    def mark_active(self, room_name: str, connected_at: datetime | None = None) -> Any:
+        """Persist an active call status for a room once media bootstrap succeeds."""
+
+        existing = self.collection.find_one({"room_name": room_name}, {"connected_at": 1})
+        effective_connected_at = None
+        if existing is not None:
+            effective_connected_at = existing.get("connected_at")
+        if effective_connected_at is None:
+            effective_connected_at = connected_at or datetime.now(UTC)
+
+        self.collection.update_one(
+            {"room_name": room_name},
+            {
+                "$set": {
+                    "status": CallSessionStatus.ACTIVE.value,
+                    "connected_at": effective_connected_at,
+                }
+            },
+        )
+        return self.collection.find_one({"room_name": room_name})
 
     def mark_transferred(self, room_name: str, transfer_target: str) -> Any:
         """Mark the room as transferred and persist the transfer target."""

@@ -141,6 +141,20 @@ class FakeTranscriptRepository:
         return None
 
 
+class FakeCallStateRepository:
+    def __init__(self) -> None:
+        self.active_marked = []
+        self.setup_metrics = []
+
+    def mark_active(self, room_name: str, connected_at=None):
+        self.active_marked.append((room_name, connected_at))
+        return {"room_name": room_name, "status": "active", "connected_at": connected_at}
+
+    def update_call_setup_metrics(self, room_name: str, call_setup_ms: float):
+        self.setup_metrics.append((room_name, call_setup_ms))
+        return {"room_name": room_name, "call_setup_ms": call_setup_ms}
+
+
 class FakeSession:
     def __init__(self) -> None:
         self.handlers = {}
@@ -240,6 +254,7 @@ async def test_bootstrap_job_interrupts_greeting_and_marks_turn() -> None:
         from cozmo_contracts.runtime import RetrievalSettings, TimeoutSettings
 
         transcript_repository = FakeTranscriptRepository()
+        call_state_repository = FakeCallStateRepository()
         room = FakeRoom()
         fake_session = FakeSession()
         settings = SimpleNamespace(
@@ -320,7 +335,7 @@ async def test_bootstrap_job_interrupts_greeting_and_marks_turn() -> None:
             lambda cls, **kwargs: SimpleNamespace(repository=transcript_repository)
         )
         job._create_live_agent_session = lambda settings: fake_session
-        job._build_live_agent = lambda runtime_config: {"instructions": "stub"}
+        job._build_live_agent = lambda runtime_config, **kwargs: {"instructions": "stub"}
 
         class FakeQualityMonitor:
             def __init__(self, **kwargs) -> None:
@@ -348,7 +363,7 @@ async def test_bootstrap_job_interrupts_greeting_and_marks_turn() -> None:
             store=SimpleNamespace(client=object(), repository=object()),
             transcript_store=SimpleNamespace(repository=transcript_repository),
             dead_letter_store=SimpleNamespace(repository=object()),
-            call_state_store=SimpleNamespace(repository=object()),
+            call_state_store=SimpleNamespace(repository=call_state_repository),
         )
 
         after_interrupts = counter_value(
@@ -367,6 +382,9 @@ async def test_bootstrap_job_interrupts_greeting_and_marks_turn() -> None:
         assert fake_session.say_calls == [
             ("Hello, you've reached Main Reception. How can I help you today?", True)
         ]
+        assert call_state_repository.active_marked == [("call-+16625640501-a1b2", None)]
+        assert call_state_repository.setup_metrics[0][0] == "call-+16625640501-a1b2"
+        assert call_state_repository.setup_metrics[0][1] > 0
         assert len(transcript_repository.turns) == 1
         assert transcript_repository.turns[0].speaker.value == "agent"
         assert transcript_repository.turns[0].interrupted is True

@@ -89,7 +89,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "percent"
         },
         "overrides": []
       },
@@ -116,11 +116,11 @@
       },
       "targets": [
         {
-          "expr": "cozmo_failed_call_setups_total",
+          "expr": "cozmo_failed_call_setup_rate_pct",
           "refId": "A"
         }
       ],
-      "title": "Failed Call Setups",
+      "title": "Failed Setup Rate",
       "type": "stat"
     },
     {
@@ -395,17 +395,17 @@
       },
       "targets": [
         {
-          "expr": "last_over_time(cozmo_room_jitter_ms[$__range])",
+          "expr": "max by (agent_config_id) (last_over_time(cozmo_persisted_room_jitter_ms[$__range]))",
           "legendFormat": "{{agent_config_id}} jitter",
           "refId": "A"
         },
         {
-          "expr": "last_over_time(cozmo_room_packet_loss_pct[$__range])",
+          "expr": "max by (agent_config_id) (last_over_time(cozmo_persisted_room_packet_loss_pct[$__range]))",
           "legendFormat": "{{agent_config_id}} packet loss",
           "refId": "B"
         },
         {
-          "expr": "last_over_time(cozmo_room_mos_estimate[$__range])",
+          "expr": "max by (agent_config_id) (last_over_time(cozmo_persisted_room_mos_estimate[$__range]))",
           "legendFormat": "{{agent_config_id}} MOS",
           "refId": "C"
         }

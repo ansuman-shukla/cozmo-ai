@@ -657,6 +657,10 @@ async def _bootstrap_job(
         resolved.room_name,
         call_setup_ms,
     )
+    await asyncio.to_thread(
+        call_state_store.repository.mark_active,
+        resolved.room_name,
+    )
     transcript_recorder = TranscriptRecorder.from_sink(
         room_name=resolved.room_name,
         sink=transcript_store.repository,

@@ -1,8 +1,9 @@
 """Runtime settings for the backend service."""
 
 from functools import lru_cache
+import os
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -29,6 +30,28 @@ def resolve_mongo_database_name(mongo_uri: str, explicit_database: str | None = 
         return "cozmo"
 
     return database_segment.split(".", maxsplit=1)[0] or "cozmo"
+
+
+def resolve_chroma_uri(chroma_uri: str) -> str:
+    """Rewrite the Compose-only Chroma alias to localhost when the backend runs on the host."""
+
+    normalized = str(chroma_uri or "").strip() or "http://localhost:8001"
+    if os.path.exists("/.dockerenv"):
+        return normalized
+
+    parsed = urlsplit(normalized)
+    hostname = (parsed.hostname or "").strip().lower()
+    if hostname != "chromadb":
+        return normalized
+
+    port = parsed.port
+    if port in (None, 8000):
+        port = 8001
+
+    netloc = "127.0.0.1"
+    if port is not None:
+        netloc = f"{netloc}:{port}"
+    return urlunsplit((parsed.scheme or "http", netloc, parsed.path, parsed.query, parsed.fragment))
 
 
 class Settings(BaseSettings):
@@ -223,6 +246,7 @@ class Settings(BaseSettings):
             self.llm_model = "gemini-3-flash-preview"
         if normalized_provider == "gemini" and self.timeout_llm_ms < MIN_GEMINI_LLM_TIMEOUT_MS:
             self.timeout_llm_ms = MIN_GEMINI_LLM_TIMEOUT_MS
+        self.chroma_uri = resolve_chroma_uri(self.chroma_uri)
         self.mongo_database = resolve_mongo_database_name(self.mongo_uri, self.mongo_database)
         return self
 

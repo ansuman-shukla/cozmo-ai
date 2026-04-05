@@ -90,6 +90,43 @@ class FakeRoom:
         )
 
 
+class FakeProtoRoom:
+    async def get_rtc_stats(self):
+        return SimpleNamespace(
+            publisher_stats=[
+                SimpleNamespace(
+                    inbound_rtp=SimpleNamespace(
+                        received=SimpleNamespace(
+                            jitter=0.012,
+                            packets_received=1200,
+                            packets_lost=6,
+                        )
+                    )
+                )
+            ],
+            subscriber_stats=[
+                SimpleNamespace(
+                    inbound_rtp=SimpleNamespace(
+                        received=SimpleNamespace(
+                            jitter=0.018,
+                            packets_received=900,
+                            packets_lost=9,
+                        )
+                    ),
+                    remote_inbound_rtp=SimpleNamespace(
+                        remote_inbound=SimpleNamespace(
+                            round_trip_time=0.145,
+                            fraction_lost=0.01,
+                        )
+                    ),
+                    candidate_pair=SimpleNamespace(
+                        candidate_pair=SimpleNamespace(current_round_trip_time=0.155)
+                    ),
+                )
+            ],
+        )
+
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_room_quality_monitor_updates_metrics_and_persists_summary() -> None:
@@ -123,5 +160,38 @@ async def test_room_quality_monitor_updates_metrics_and_persists_summary() -> No
             metrics_module.ROOM_PACKET_LOSS_PCT,
             {"worker_name": "cozmo-agent-quality", "agent_config_id": "main-inbound"},
         ) == pytest.approx((15.0 / 2115.0) * 100.0, rel=1e-3)
+    finally:
+        remove_repo_paths(*inserted_paths)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_room_quality_monitor_supports_livekit_proto_stat_wrappers() -> None:
+    inserted_paths = add_repo_paths()
+
+    try:
+        quality_module = load_module("agent_quality_module_proto", "app/observability/quality.py")
+        metrics_module = load_module("agent_metrics_quality_proto", "app/observability/metrics.py")
+
+        sink = FakeCallStateSink()
+        monitor = quality_module.RoomQualityMonitor(
+            room=FakeProtoRoom(),
+            worker_name="cozmo-agent-quality",
+            agent_config_id="main-inbound",
+            room_name="call-+16625640501-quality",
+            call_state_sink=sink,
+        )
+
+        quality = await monitor.sample_once()
+
+        assert quality is not None
+        assert quality.avg_jitter_ms == pytest.approx(15.0)
+        assert quality.packet_loss_pct == pytest.approx((15.0 / 2115.0) * 100.0, rel=1e-3)
+        assert quality.mos_estimate is not None
+        assert sink.updates[0][0] == "call-+16625640501-quality"
+        assert gauge_value(
+            metrics_module.ROOM_MOS_ESTIMATE,
+            {"worker_name": "cozmo-agent-quality", "agent_config_id": "main-inbound"},
+        ) == pytest.approx(quality.mos_estimate)
     finally:
         remove_repo_paths(*inserted_paths)

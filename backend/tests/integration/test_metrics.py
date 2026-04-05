@@ -23,7 +23,12 @@ def test_backend_metrics_scrape_exposes_required_session_metrics(
 
     try:
         from app import main as main_module
-        from cozmo_contracts.models import CallDisposition, CallSessionRecord, CallSessionStatus
+        from cozmo_contracts.models import (
+            CallDisposition,
+            CallSessionRecord,
+            CallSessionStatus,
+            VoiceQualityMetrics,
+        )
 
         now = datetime.now(UTC)
         fake_resources = FakeMongoResources(
@@ -50,6 +55,21 @@ def test_backend_metrics_scrape_exposes_required_session_metrics(
                         created_at=now,
                         disposition=CallDisposition.SETUP_FAILED,
                     ),
+                    CallSessionRecord(
+                        provider="twilio",
+                        provider_call_id="CA-completed",
+                        room_name="call-completed",
+                        did="+16625640501",
+                        ani="+919262561716",
+                        agent_config_id="main-inbound",
+                        status=CallSessionStatus.COMPLETED,
+                        created_at=now,
+                        voice_quality=VoiceQualityMetrics(
+                            avg_jitter_ms=14.5,
+                            packet_loss_pct=0.7,
+                            mos_estimate=4.11,
+                        ),
+                    ),
                 ]
             ),
             transcripts=FakeTranscriptRepository([]),
@@ -66,5 +86,9 @@ def test_backend_metrics_scrape_exposes_required_session_metrics(
         assert "cozmo_backend_healthcheck_total" in response.text
         assert "cozmo_active_calls 1.0" in response.text
         assert "cozmo_failed_call_setups_total 1.0" in response.text
+        assert "cozmo_failed_call_setup_rate_pct 33.33333333333333" in response.text
+        assert 'cozmo_persisted_room_jitter_ms{agent_config_id="main-inbound"} 14.5' in response.text
+        assert 'cozmo_persisted_room_packet_loss_pct{agent_config_id="main-inbound"} 0.7' in response.text
+        assert 'cozmo_persisted_room_mos_estimate{agent_config_id="main-inbound"} 4.11' in response.text
     finally:
         remove_repo_paths(*inserted_paths)
