@@ -184,12 +184,12 @@ flowchart LR
 
 | Capability | Implementation |
 |---|---|
-| **Interruptible TTS (Barge-in)** | Caller speech cancels active TTS playback immediately. Queued audio frames are dropped. |
+| **Interruptible TTS (Barge-in)** | Caller speech cancels active TTS playback immediately. Queued audio frames are dropped. Target interruption latency: < 200 ms. |
 | **Graceful turn-taking** | VAD + endpointing detect speech boundaries. Agent waits for a clean endpoint before responding. |
 | **Recovery-aware bootstrap** | Replacement workers load recent transcript history and resume with a recovery prompt. |
 | **Knowledge-grounded responses** | Every turn queries ChromaDB. Responses are built from retrieved context when confidence is above threshold. |
 | **No-answer fallback** | When retrieval confidence is low, the agent uses an explicit fallback response instead of hallucinating. |
-| **Objection handling** | A policy router directs objections to scripted trust-handling, LLM generation, or human-transfer paths. |
+| **Objection handling** | A policy router directs objections to scripted trust-handling or LLM generation paths. Transfer request protocol is defined; provider-backed transfer execution is planned for a future release. |
 
 ---
 
@@ -203,7 +203,7 @@ flowchart LR
         direction TB
         S1["Business Knowledge"] --> S2["Ingestion API"]
         S2 --> S3["Chunking + Overlap"]
-        S3 --> S4["Embedding (text-embedding-3-small)"]
+        S3 --> S4["Embedding Adapter"]
         S4 --> S5[("ChromaDB")]
     end
 
@@ -220,6 +220,7 @@ flowchart LR
 
 ### Design properties
 
+- **Embedding adapter with fallback** — uses OpenAI `text-embedding-3-small` when an API key is configured; falls back to a local hashed embedding profile for development and testing.
 - **Chunked with overlap** to preserve answer continuity across document boundaries.
 - **Thresholded retrieval** — low-confidence matches are filtered before they reach the prompt. The model never sees garbage context.
 - **Explicit no-answer path** — when retrieval misses, the system uses a structured fallback rather than relying on the LLM to self-restrain from hallucination.
@@ -279,7 +280,7 @@ flowchart LR
     end
 
     subgraph Stack["Observability Stack"]
-        Prom["Prometheus<br/>(scrape interval: 15s)"]
+        Prom["Prometheus<br/>(scrape interval: 5s)"]
         Grafana["Grafana<br/>Cozmo Platform Overview"]
     end
 

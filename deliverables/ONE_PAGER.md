@@ -45,12 +45,12 @@ flowchart TB
 
 | Subsystem | Hard Limit | What Happens |
 |---|---|---|
-| **Deepgram STT** | 150 concurrent streams (Pay-As-You-Go) | HTTP 429 → caller audio is not transcribed → turn pipeline stalls |
-| **Deepgram TTS** | 45 concurrent requests (default) | Queueing → TTS first-audio latency inflates from ~80ms to 500ms+ → perceived RTT blows past 900ms SLA |
-| **Gemini Flash QPM** | Model-specific RPM/QPM quota | TTFT tail grows from ~200ms to 1–2s under contention → response feels sluggish |
-| **Worker fleet** | CPU-bound: ~8–15 concurrent jobs per worker (measured, not guessed) | At 1,000 calls: need 70–125 worker servers. Under-provisioned fleet → queue depth spike → call setup failures |
-| **LiveKit SFU** | Single-node port/bandwidth ceiling | 1,000 rooms × bidirectional audio → ~500 Mbps sustained. Single node cannot serve this. |
-| **MongoDB** | Write throughput + index maintenance | ~3 writes/call/turn × 1,000 calls × ~3 turns/min = 9,000 writes/min. WiredTiger I/O pressure + index amplification |
+| **Deepgram STT** | ~150 concurrent streams (documented Pay-As-You-Go default) | HTTP 429 → caller audio is not transcribed → turn pipeline stalls |
+| **Deepgram TTS** | ~45 concurrent requests (documented default) | Queueing → TTS first-audio latency inflates significantly → perceived RTT risks exceeding 900ms SLA |
+| **Gemini Flash QPM** | Model-specific RPM/QPM quota | TTFT tail expected to grow under contention → response feels sluggish |
+| **Worker fleet** | CPU-bound: estimated ~8–15 concurrent jobs per worker (to be profiled under load) | At 1,000 calls: estimated 70–125 worker servers needed. Under-provisioned fleet → queue depth spike → call setup failures |
+| **LiveKit SFU** | Single-node port/bandwidth ceiling | 1,000 rooms × bidirectional audio → estimated ~500 Mbps sustained. Single node cannot serve this. |
+| **MongoDB** | Write throughput + index maintenance | Estimated ~3 writes/call/turn × 1,000 calls × ~3 turns/min ≈ 9,000 writes/min. WiredTiger I/O pressure + index amplification |
 | **ChromaDB** | Embedding compute + disk I/O | 1,000 concurrent top-k queries. Single-node Chroma cannot serve this without replication or caching |
 
 ---
@@ -73,7 +73,7 @@ flowchart TB
 | **Horizontal worker autoscaling** | Scale on three signals: active jobs, queue depth, p95 perceived RTT. Kubernetes HPA or custom autoscaler. |
 | **Measured concurrency caps** | Profile each worker instance under load. Set max concurrent jobs to the value where p95 RTT stays below 900ms — not a hardcoded constant. |
 | **Resource isolation** | Pin workers to dedicated CPU/memory limits. Prevent noisy-neighbor effects across jobs on the same node. |
-| **Warm pool** | Pre-provision idle workers during expected peak traffic. Cold-start penalty for a new worker process is 2–5s. |
+| **Warm pool** | Pre-provision idle workers during expected peak traffic. Cold-start penalty for a new worker process is estimated at 2–5s. |
 
 ### Media layer
 
@@ -127,9 +127,9 @@ flowchart LR
 
 ### The dominant bottleneck is LLM TTFT
 
-Based on current telemetry instrumentation:
+Based on stage-level instrumentation architecture and expected provider latency profiles (to be validated under stepped load testing):
 
-| Stage | Latency (p50) | Latency (p95) | % of Total RTT |
+| Stage | Estimated Latency (p50) | Estimated Latency (p95) | Est. % of Total RTT |
 |---|---|---|---|
 | VAD / endpointing | ~50 ms | ~80 ms | ~10% |
 | Deepgram STT | ~100 ms | ~150 ms | ~20% |
@@ -138,7 +138,9 @@ Based on current telemetry instrumentation:
 | Deepgram TTS first-audio | ~80 ms | ~120 ms | ~20% |
 | **Total perceived RTT** | **~470 ms** | **~780 ms** | — |
 
-**LLM TTFT accounts for ~42% of the total perceived round-trip time.** It is the single largest contributor to the caller's wait-for-response experience.
+> These estimates are based on documented provider characteristics and single-call profiling. Formal stepped load validation (25 → 50 → 100 calls) is planned to produce measured baselines.
+
+**LLM TTFT is expected to account for ~42% of the total perceived round-trip time**, making it the single largest contributor to the caller's wait-for-response experience.
 
 ### Why LLM TTFT dominates
 

@@ -74,9 +74,7 @@ PSTN Caller → Twilio SIP → LiveKit SFU → Agent Worker → [STT → RAG →
 
 ## 📊 Grafana Dashboard
 
-> **Placeholder** — Screenshot of the live Grafana "Cozmo Platform Overview" dashboard will be added here.
-
-<!-- ![Grafana Dashboard](assets/grafana-dashboard.png) -->
+![Grafana Dashboard](deliverables/image.png)
 
 The dashboard tracks:
 - Active calls and worker jobs in real-time

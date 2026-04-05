@@ -74,7 +74,7 @@
 | Pipeline flexibility | Good | Exceptional | **Pipecat** |
 | Production observability | Strong, integrated | Application-defined | **LiveKit** |
 | Rapid prototyping | Good | Excellent | **Pipecat** |
-| 100-call scalability story | Proven architecture | Depends on orchestration | **LiveKit** |
+| 100-call scalability story | Architecturally stronger | Depends on orchestration | **LiveKit** |
 
 ---
 
