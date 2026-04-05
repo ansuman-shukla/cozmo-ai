@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib
 import math
+import re
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,7 +79,80 @@ def _render_silence(*, duration_ms: int, sample_rate: int, num_channels: int = 1
     return b"\x00\x00" * total_samples * num_channels
 
 
-class TtsAdapter:
+class TtsAdapterError(RuntimeError):
+    """Raised when the configured TTS provider cannot be initialized."""
+
+
+@dataclass(frozen=True, slots=True)
+class TtsChunk:
+    """A stable text chunk ready for provider TTS synthesis."""
+
+    index: int
+    text: str
+
+
+class TtsChunker:
+    """Split agent text into stable sentence-oriented chunks for TTS."""
+
+    def __init__(self, *, max_chars: int = 180) -> None:
+        self.max_chars = max_chars
+
+    def chunk(self, text: str) -> list[TtsChunk]:
+        """Split text into sentence-aware chunks capped by `max_chars`."""
+
+        normalized = " ".join(str(text or "").split()).strip()
+        if not normalized:
+            return []
+
+        sentences = [
+            sentence.strip()
+            for sentence in re.split(r"(?<=[.!?])\s+", normalized)
+            if sentence.strip()
+        ]
+        if not sentences:
+            sentences = [normalized]
+
+        chunks: list[str] = []
+        current = ""
+        for sentence in sentences:
+            if len(sentence) > self.max_chars:
+                if current:
+                    chunks.append(current)
+                    current = ""
+                chunks.extend(self._chunk_long_sentence(sentence))
+                continue
+
+            candidate = sentence if not current else f"{current} {sentence}"
+            if current and len(candidate) > self.max_chars:
+                chunks.append(current)
+                current = sentence
+            else:
+                current = candidate
+
+        if current:
+            chunks.append(current)
+
+        return [TtsChunk(index=index, text=chunk) for index, chunk in enumerate(chunks)]
+
+    def _chunk_long_sentence(self, sentence: str) -> list[str]:
+        """Split a long sentence by words while preserving stable chunk ordering."""
+
+        words = sentence.split()
+        chunks: list[str] = []
+        current = ""
+        for word in words:
+            candidate = word if not current else f"{current} {word}"
+            if current and len(candidate) > self.max_chars:
+                chunks.append(current)
+                current = word
+            else:
+                current = candidate
+        if current:
+            chunks.append(current)
+        return chunks
+
+
+class PlaceholderGreetingRenderer:
     """Deterministic placeholder renderer used until provider TTS is implemented."""
 
     def __init__(
@@ -109,3 +185,49 @@ class TtsAdapter:
             num_channels=self.num_channels,
             frame_duration_ms=self.frame_duration_ms,
         )
+
+
+@dataclass(slots=True)
+class TtsAdapter:
+    """Thin provider wrapper for worker TTS initialization."""
+
+    provider: str
+    model: str
+    voice: str | None = None
+    api_key: str | None = None
+
+    @classmethod
+    def from_settings(cls, settings: Any) -> "TtsAdapter":
+        """Build a provider-backed TTS adapter from the shared worker settings."""
+
+        return cls(
+            provider=str(settings.tts_provider),
+            model=str(settings.tts_model),
+            voice=getattr(settings, "tts_voice", None),
+            api_key=getattr(settings, "deepgram_api_key", None),
+        )
+
+    def create_provider(self) -> Any:
+        """Create the configured provider plugin object."""
+
+        if self.provider != "deepgram":
+            raise TtsAdapterError(f"Unsupported TTS provider: {self.provider}")
+
+        try:
+            deepgram = importlib.import_module("livekit.plugins.deepgram")
+        except ImportError as exc:
+            raise TtsAdapterError(
+                "Deepgram LiveKit plugin is not installed; run `uv sync --all-packages --dev`."
+            ) from exc
+
+        constructor = deepgram.TTS
+        base_kwargs: dict[str, Any] = {"model": self.model}
+        if self.api_key:
+            base_kwargs["api_key"] = self.api_key
+
+        if self.voice:
+            try:
+                return constructor(voice=self.voice, **base_kwargs)
+            except TypeError:
+                pass
+        return constructor(**base_kwargs)

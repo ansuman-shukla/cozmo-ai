@@ -24,6 +24,30 @@ FALLBACK_AGENT_CONFIG_ID = "fallback-unmapped-did"
 PENDING_AGENT_CONFIG_ID = "pending-assignment"
 
 
+def build_metrics_summary(
+    existing: CallSessionRecord | None,
+    *,
+    created_at: datetime,
+    connected_at: datetime | None,
+) -> CallMetricsSummary:
+    """Preserve aggregated metrics while deriving call-setup timing when available."""
+
+    current = existing.metrics_summary if existing is not None else CallMetricsSummary()
+    call_setup_ms = current.call_setup_ms
+    if connected_at is not None:
+        call_setup_ms = max((connected_at - created_at).total_seconds() * 1000, 0.0)
+
+    return CallMetricsSummary(
+        avg_perceived_rtt_ms=current.avg_perceived_rtt_ms,
+        p95_perceived_rtt_ms=current.p95_perceived_rtt_ms,
+        avg_pipeline_rtt_ms=current.avg_pipeline_rtt_ms,
+        avg_stt_ms=current.avg_stt_ms,
+        avg_llm_ttft_ms=current.avg_llm_ttft_ms,
+        avg_tts_first_audio_ms=current.avg_tts_first_audio_ms,
+        call_setup_ms=call_setup_ms,
+    )
+
+
 @dataclass(slots=True)
 class WebhookResult:
     """Outcome of a webhook ingestion attempt."""
@@ -259,7 +283,15 @@ class WebhookIngestionService:
             disposition=disposition,
             transfer_target=existing.transfer_target if existing is not None else None,
             recovery_count=existing.recovery_count if existing is not None else 0,
-            metrics_summary=existing.metrics_summary if existing is not None else CallMetricsSummary(),
+            metrics_summary=build_metrics_summary(
+                existing,
+                created_at=existing.created_at if existing is not None else occurred_at,
+                connected_at=resolve_connected_at(
+                    existing=existing,
+                    occurred_at=occurred_at,
+                    status=status,
+                ),
+            ),
             voice_quality=existing.voice_quality if existing is not None else VoiceQualityMetrics(),
         )
         return self.session_service.upsert_call_session(session)
@@ -287,7 +319,11 @@ class WebhookIngestionService:
             disposition=existing.disposition or CallDisposition.SETUP_FAILED,
             transfer_target=existing.transfer_target if existing is not None else None,
             recovery_count=existing.recovery_count if existing is not None else 0,
-            metrics_summary=existing.metrics_summary if existing is not None else CallMetricsSummary(),
+            metrics_summary=build_metrics_summary(
+                existing,
+                created_at=existing.created_at if existing is not None else occurred_at,
+                connected_at=existing.connected_at if existing is not None else None,
+            ),
             voice_quality=existing.voice_quality if existing is not None else VoiceQualityMetrics(),
         )
         return self.session_service.upsert_call_session(session)
@@ -320,7 +356,11 @@ class WebhookIngestionService:
             disposition=existing.disposition or disposition if existing is not None else disposition,
             transfer_target=existing.transfer_target if existing is not None else None,
             recovery_count=existing.recovery_count if existing is not None else 0,
-            metrics_summary=existing.metrics_summary if existing is not None else CallMetricsSummary(),
+            metrics_summary=build_metrics_summary(
+                existing,
+                created_at=existing.created_at if existing is not None else occurred_at,
+                connected_at=existing.connected_at if existing is not None else None,
+            ),
             voice_quality=existing.voice_quality if existing is not None else VoiceQualityMetrics(),
         )
         return self.session_service.upsert_call_session(session)
@@ -367,7 +407,15 @@ class WebhookIngestionService:
             disposition=mapped_disposition or existing.disposition,
             transfer_target=existing.transfer_target,
             recovery_count=existing.recovery_count,
-            metrics_summary=existing.metrics_summary,
+            metrics_summary=build_metrics_summary(
+                existing,
+                created_at=existing.created_at,
+                connected_at=resolve_connected_at(
+                    existing=existing,
+                    occurred_at=occurred_at,
+                    status=mapped_status,
+                ),
+            ),
             voice_quality=existing.voice_quality,
         )
         return self.session_service.upsert_call_session(session)

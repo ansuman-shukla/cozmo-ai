@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
   "cozmo-contracts",
   "dnspython>=2.7.0",
-  "livekit-agents[google]~=1.5",
+  "livekit-agents[google,deepgram]~=1.5",
   "pymongo>=4.10.1",
   "prometheus-client>=0.21.1",
   "pydantic-settings>=2.8.1",

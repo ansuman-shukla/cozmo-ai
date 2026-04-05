@@ -28,6 +28,10 @@ def test_agent_settings_defaults() -> None:
     assert settings.backend_base_url == "http://localhost:8000"
     assert settings.max_history_turns == 10
     assert settings.max_jobs_per_worker_server == 8
+    assert settings.metrics_enabled is True
+    assert settings.metrics_port == 9108
+    assert settings.system_metrics_poll_interval_ms == 5000
+    assert settings.room_quality_poll_interval_ms == 5000
 
 
 @pytest.mark.unit
@@ -66,6 +70,9 @@ def test_agent_settings_support_generic_runtime_envs(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("TIMEOUT_TTS_MS", "7100")
     monkeypatch.setenv("TIMEOUT_KB_MS", "310")
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    monkeypatch.setenv("METRICS_PORT", "9200")
+    monkeypatch.setenv("SYSTEM_METRICS_POLL_INTERVAL_MS", "1500")
+    monkeypatch.setenv("ROOM_QUALITY_POLL_INTERVAL_MS", "1750")
 
     settings = config.Settings(_env_file=None)
 
@@ -74,6 +81,9 @@ def test_agent_settings_support_generic_runtime_envs(monkeypatch: pytest.MonkeyP
     assert settings.livekit_dispatch_agent_name == "voice-agent"
     assert settings.call_room_prefix == "support-"
     assert settings.log_level == "DEBUG"
+    assert settings.metrics_port == 9200
+    assert settings.system_metrics_poll_interval_ms == 1500
+    assert settings.room_quality_poll_interval_ms == 1750
     assert settings.retrieval_settings().min_score == 0.5
     assert settings.timeout_settings().tts_ms == 7100
 

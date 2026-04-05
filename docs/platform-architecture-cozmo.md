@@ -553,6 +553,18 @@ Current implementation note:
 
 - Steps 9 through 13 are now implemented in the worker bootstrap path
 - the current Step 13 behavior publishes a deterministic short greeting-audio placeholder track after config resolution
+- the worker now persists that initial greeting as the first ordered `agent` transcript turn in Mongo
+- the worker now has a stateful turn detector with explicit speech-start and speech-end events
+- the worker now stops queued greeting playback when a remote participant becomes an active speaker and marks that greeting turn as interrupted
+- interruption metrics now track response interruptions and interrupted agent turns
+- the interruption path now has integration coverage at the bootstrap level, including caller-speech interruption during greeting playback
+- the mocked conversational pipeline now also carries interrupted agent turns forward correctly so the next caller turn can be processed without corrupting prompt history
+- the conversational policy layer now supports a grounded no-answer fallback, a scripted trust objection branch, and a transfer branch with validated transfer targets and call-state updates
+- transfer execution is still modeled behind a provider abstraction; the current implementation validates payloads and state transitions before a real SIP/LK handoff is wired
+- the worker now claims room recovery exactly once after a recoverable crash, builds a short resume prompt from transcript history, and increments `recovery_count` on the persisted call session
+- transcript writes now retry transient failures and dead-letter unrecoverable payloads into Mongo for later replay, and transcript-side idempotency keys suppress duplicate side effects
+- Gemini Flash text and Deepgram speech adapter scaffolding now exist in the worker pipeline layer
+- the worker pipeline now has a mocked-provider turn orchestrator for STT -> LLM -> TTS integration coverage, stable TTS text chunking, and per-turn latency metrics
 - provider-backed TTS is still pending and will replace that placeholder path later in the voice pipeline work
 
 ### 6.2 Critical Observations
@@ -844,6 +856,17 @@ LiveKit
   -> jitter / packet loss / room quality
 ```
 
+Current implementation status as of April 5, 2026:
+
+- the agent worker exposes Prometheus metrics locally on `COZMO_AGENT_METRICS_PORT` with call setup timing, active-job gauge, recovery count, and per-turn latency histograms
+- the agent worker now also exposes CPU utilization, memory utilization, queue depth, and per-call room-quality gauges for jitter, packet loss, and MOS
+- backend `/metrics` now includes persisted active-call and failed-setup gauges sourced from Mongo-backed session state
+- `call_sessions.metrics_summary.call_setup_ms` is populated from call lifecycle timestamps once a session reaches the connected state
+- room-quality snapshots are now sampled from `Room.get_rtc_stats()` and persisted into `call_sessions.voice_quality` during active calls
+- the Compose stack now provisions Prometheus and Grafana for local observability, with Grafana loading the `Cozmo Platform Overview` dashboard automatically from `infra/grafana/dashboards`
+- for local development with backend and agent running on the host instead of inside Compose, Prometheus scrapes `host.docker.internal:8000` and `host.docker.internal:9108` through Docker's host gateway
+- integration coverage now validates both the worker HTTP exporter and backend `/metrics` scrape output against the required metric set
+
 ### 9.3 Alerts
 
 | Alert | Condition |
@@ -1091,7 +1114,7 @@ STT_PROVIDER=deepgram
 STT_MODEL=nova-3
 TTS_PROVIDER=deepgram
 TTS_MODEL=aura-2-thalia-en
-LLM_PROVIDER=openai
+LLM_PROVIDER=gemini
 LLM_MODEL=your-low-latency-streaming-model
 
 # Data
@@ -1189,6 +1212,13 @@ Therefore:
 - end-to-end PSTN verification must use a public staging deployment or LiveKit Cloud / public LiveKit host
 
 This is an important realism point and should be stated explicitly.
+
+Current validation artifacts as of April 5, 2026:
+
+- `tests/e2e/test_synthetic_call_flow.py` covers the local synthetic call path across backend webhooks, shared persistence, the agent turn pipeline, and backend read APIs
+- `tests/load/profiles.json` defines stepped `25-calls`, `50-calls`, and `100-calls` synthetic profiles aligned to the PRD acceptance thresholds
+- `tests/load/runner.py` writes per-profile JSON reports, and `infra/scripts/load_test.sh` is the wrapper entrypoint for local synthetic load runs
+- `docs/staged-pstn-smoke-test.md` is the manual checklist for the public PSTN staging pass
 
 ---
 

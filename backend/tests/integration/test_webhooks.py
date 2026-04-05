@@ -319,6 +319,7 @@ def test_livekit_room_started_then_participant_joined_creates_and_updates_sessio
         assert stored.status == CallSessionStatus.ACTIVE
         assert stored.created_at == datetime.fromtimestamp(int(now.timestamp()), UTC)
         assert stored.connected_at == datetime.fromtimestamp(int((now + timedelta(seconds=5)).timestamp()), UTC)
+        assert stored.metrics_summary.call_setup_ms == 5000.0
     finally:
         remove_repo_paths(*inserted_paths)
 

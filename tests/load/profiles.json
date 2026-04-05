@@ -1,0 +1,29 @@
+[
+  {
+    "name": "25-calls",
+    "concurrent_calls": 25,
+    "ramp_seconds": 30,
+    "hold_seconds": 120,
+    "max_avg_perceived_rtt_ms": 600,
+    "max_p95_perceived_rtt_ms": 900,
+    "max_failed_setup_rate_pct": 1
+  },
+  {
+    "name": "50-calls",
+    "concurrent_calls": 50,
+    "ramp_seconds": 45,
+    "hold_seconds": 180,
+    "max_avg_perceived_rtt_ms": 600,
+    "max_p95_perceived_rtt_ms": 900,
+    "max_failed_setup_rate_pct": 1
+  },
+  {
+    "name": "100-calls",
+    "concurrent_calls": 100,
+    "ramp_seconds": 60,
+    "hold_seconds": 240,
+    "max_avg_perceived_rtt_ms": 600,
+    "max_p95_perceived_rtt_ms": 900,
+    "max_failed_setup_rate_pct": 1
+  }
+]

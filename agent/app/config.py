@@ -189,6 +189,32 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("COZMO_AGENT_LOG_LEVEL", "LOG_LEVEL"),
         min_length=1,
     )
+    metrics_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("COZMO_AGENT_METRICS_ENABLED", "METRICS_ENABLED"),
+    )
+    metrics_port: int = Field(
+        default=9108,
+        ge=1,
+        le=65535,
+        validation_alias=AliasChoices("COZMO_AGENT_METRICS_PORT", "METRICS_PORT"),
+    )
+    system_metrics_poll_interval_ms: int = Field(
+        default=5000,
+        ge=250,
+        validation_alias=AliasChoices(
+            "COZMO_AGENT_SYSTEM_METRICS_POLL_INTERVAL_MS",
+            "SYSTEM_METRICS_POLL_INTERVAL_MS",
+        ),
+    )
+    room_quality_poll_interval_ms: int = Field(
+        default=5000,
+        ge=250,
+        validation_alias=AliasChoices(
+            "COZMO_AGENT_ROOM_QUALITY_POLL_INTERVAL_MS",
+            "ROOM_QUALITY_POLL_INTERVAL_MS",
+        ),
+    )
 
     @model_validator(mode="after")
     def populate_database_name(self) -> "Settings":

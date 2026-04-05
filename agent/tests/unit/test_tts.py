@@ -28,7 +28,7 @@ def test_build_initial_greeting_normalizes_agent_name() -> None:
 @pytest.mark.unit
 def test_tts_adapter_synthesize_returns_pcm_audio() -> None:
     tts = load_module("agent_tts", "app/pipeline/tts.py")
-    adapter = tts.TtsAdapter()
+    adapter = tts.PlaceholderGreetingRenderer()
 
     rendered = adapter.synthesize("Hello there.")
 
@@ -56,3 +56,20 @@ def test_rendered_audio_frames_are_fixed_size() -> None:
     assert len(frames) == 2
     assert all(len(frame) == 20 for frame in frames)
     assert frames[-1][-10:] == b"\x00\x00" * 5
+
+
+@pytest.mark.unit
+def test_tts_chunker_emits_stable_sentence_chunks() -> None:
+    tts = load_module("agent_tts", "app/pipeline/tts.py")
+    chunker = tts.TtsChunker(max_chars=60)
+
+    chunks = chunker.chunk(
+        "Thanks for calling. I can help with pricing and setup questions. "
+        "If you need a person, I can escalate that too."
+    )
+
+    assert [chunk.text for chunk in chunks] == [
+        "Thanks for calling.",
+        "I can help with pricing and setup questions.",
+        "If you need a person, I can escalate that too.",
+    ]

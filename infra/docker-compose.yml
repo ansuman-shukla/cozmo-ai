@@ -58,11 +58,15 @@ services:
       - chromadb
     env_file:
       - ../.env
+    ports:
+      - "9108:9108"
 
   prometheus:
     image: prom/prometheus:v2.55.1
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "9090:9090"
     volumes:
@@ -71,10 +75,14 @@ services:
 
   grafana:
     image: grafana/grafana:11.3.0
+    depends_on:
+      - prometheus
     ports:
       - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
 
 volumes:
   mongo_data:

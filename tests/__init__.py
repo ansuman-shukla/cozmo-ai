@@ -1,2 +1,1 @@
-"""Top-level test package."""
-
+"""Root-level end-to-end and load validation tests."""

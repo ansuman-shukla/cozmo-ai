@@ -177,6 +177,7 @@ def test_calls_and_agents_routes_read_from_repositories(
             list_agents = client.get("/agents")
             active_agents = client.get("/agents", params={"active_only": "true"})
             get_agent = client.get("/agents/sales-main")
+            metrics = client.get("/metrics")
 
             assert list_calls.status_code == 200
             assert len(list_calls.json()["items"]) == 2
@@ -186,6 +187,9 @@ def test_calls_and_agents_routes_read_from_repositories(
             assert len(list_agents.json()["items"]) == 2
             assert len(active_agents.json()["items"]) == 1
             assert get_agent.json()["did"] == "+15551234567"
+            assert metrics.status_code == 200
+            assert 'cozmo_active_calls 1.0' in metrics.text
+            assert 'cozmo_failed_call_setups_total 0.0' in metrics.text
     finally:
         remove_repo_paths(*inserted_paths)
 

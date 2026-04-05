@@ -1,4 +1,4 @@
-.PHONY: sync lock lint unit integration e2e backend agent compose-config up down
+.PHONY: sync lock lint unit integration e2e load backend agent compose-config up down
 
 sync:
 	uv sync --all-packages --dev
@@ -17,6 +17,9 @@ integration:
 
 e2e:
 	uv run --all-packages pytest tests/e2e
+
+load:
+	uv run python -m tests.load.runner --profiles tests/load/profiles.json --output-dir artifacts/load
 
 backend:
 	uv run --directory backend uvicorn app.main:app --host 0.0.0.0 --port 8000

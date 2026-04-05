@@ -146,118 +146,169 @@ Implementation notes as of April 5, 2026
 
 ## 7. Core Voice Pipeline
 
-- [ ] Implement turn detection wrapper
-- [ ] Implement STT adapter
-- [ ] Implement prompt builder, LLM adapter, and TTS adapter
-- [ ] Implement transcript persistence hooks
+- [x] Implement turn detection wrapper
+- [x] Implement STT adapter
+- [x] Implement prompt builder, LLM adapter, and TTS adapter
+- [x] Implement transcript persistence hooks
 
 Unit tests
 
-- [ ] VAD or endpointing transitions emit expected speech start/end events
-- [ ] prompt builder includes persona, history, and retrieved KB chunks
-- [ ] TTS chunker emits stable chunks instead of token-by-token audio
+- [x] VAD or endpointing transitions emit expected speech start/end events
+- [x] prompt builder includes persona, history, and retrieved KB chunks
+- [x] TTS chunker emits stable chunks instead of token-by-token audio
 
 Integration tests
 
-- [ ] audio input -> transcript -> LLM -> TTS round trip works with mocked providers
-- [ ] transcript turns are stored in order
-- [ ] pipeline timing metrics are emitted per turn
+- [x] audio input -> transcript -> LLM -> TTS round trip works with mocked providers
+- [x] transcript turns are stored in order
+- [x] pipeline timing metrics are emitted per turn
+
+Implementation notes as of April 5, 2026
+
+- the worker now has a stateful turn detector with speech-start and speech-end events plus an RMS fallback for raw PCM frames
+- the worker now has typed in-memory conversation state, retrieval-hit normalization, and provider wrapper classes for Gemini Flash text plus Deepgram STT/TTS
+- the worker now persists transcript turns through a Mongo-backed recorder, and the initial greeting is stored as the first `agent` turn
+- the pipeline layer now includes a mocked-provider `TurnPipeline` that runs STT -> prompt build -> Gemini text completion -> stable TTS chunking -> transcript persistence
+- per-turn latency metrics are now emitted under stage labels for STT, LLM, TTS, and total pipeline RTT
+- the current LLM target is `gemini-3-flash-preview`
+- the current speech-provider target is Deepgram for both STT and TTS
+- the live per-turn media loop is still pending; the new adapters are scaffolding for the next integration slice
 
 ---
 
 ## 8. Barge-In And Interruption Handling
 
-- [ ] Implement interruption coordinator inside the job
-- [ ] Cancel or stop active TTS on caller speech start
-- [ ] Mark interrupted agent turns in transcripts and metrics
+- [x] Implement interruption coordinator inside the job
+- [x] Cancel or stop active TTS on caller speech start
+- [x] Mark interrupted agent turns in transcripts and metrics
 
 Unit tests
 
-- [ ] interruption state machine cancels active response correctly
-- [ ] queued audio is dropped after interruption
-- [ ] interrupted turns are flagged in transcript records
+- [x] interruption state machine cancels active response correctly
+- [x] queued audio is dropped after interruption
+- [x] interrupted turns are flagged in transcript records
 
 Integration tests
 
-- [ ] caller speech during TTS stops playback quickly enough
-- [ ] next user turn is processed correctly after interruption
+- [x] caller speech during TTS stops playback quickly enough
+- [x] next user turn is processed correctly after interruption
+
+Implementation notes as of April 5, 2026
+
+- the worker now installs an interruption coordinator on the live job path and listens for remote active-speaker changes during greeting playback
+- queued greeting audio frames are cleared immediately when caller speech interrupts playback
+- interrupted greeting turns are now marked in Mongo transcripts and counted in interruption metrics
+- integration coverage now exercises the bootstrap path end to end through greeting publish, caller speech interruption, queue clearing, transcript marking, and interruption metrics
+- the mocked conversational turn pipeline now preserves interrupted agent turns in history and successfully processes the caller's next turn with the same pipeline instance
+- full barge-in for the later provider-backed conversational TTS loop is still pending with the real streaming voice path
 
 ---
 
 ## 9. Fallbacks, Objection Handling, And Transfer
 
-- [ ] Implement no-answer fallback
-- [ ] Implement at least one objection handler
-- [ ] Implement supported human transfer flow
+- [x] Implement no-answer fallback
+- [x] Implement at least one objection handler
+- [x] Implement supported human transfer flow
 
 Unit tests
 
-- [ ] objection classifier routes to scripted, llm, or transfer branch correctly
-- [ ] no-answer path is selected when retrieval misses
-- [ ] transfer request payload builder is valid
+- [x] objection classifier routes to scripted, llm, or transfer branch correctly
+- [x] no-answer path is selected when retrieval misses
+- [x] transfer request payload builder is valid
 
 Integration tests
 
-- [ ] objection scenario runs end to end
-- [ ] transfer path marks call state and disposition correctly
-- [ ] transfer failure falls back gracefully
+- [x] objection scenario runs end to end
+- [x] transfer path marks call state and disposition correctly
+- [x] transfer failure falls back gracefully
+
+Implementation notes as of April 5, 2026
+
+- the worker now has an objection router that can send a turn to scripted trust-handling, Gemini text generation, or human-transfer handling
+- retrieval misses now take the configured no-answer path when retrieval was attempted and returned no grounded chunks
+- transfer support now includes a validated transfer-request builder, success and failure response handling, and call-session state updates for successful transfers
+- current transfer execution is still a mocked/provider-abstracted path in the turn pipeline; a real LiveKit or SIP handoff implementation is the next provider-facing step
 
 ---
 
 ## 10. Recovery And Reliability
 
-- [ ] Implement job crash recovery markers and replacement job flow
-- [ ] Add dead-letter path for failed transcript writes
-- [ ] Add idempotency handling for duplicate events
+- [x] Implement job crash recovery markers and replacement job flow
+- [x] Add dead-letter path for failed transcript writes
+- [x] Add idempotency handling for duplicate events
 
 Unit tests
 
-- [ ] recovery coordinator marks a room recoverable only once
-- [ ] failed write events are enqueued for replay
-- [ ] idempotency keys suppress duplicate side effects
+- [x] recovery coordinator marks a room recoverable only once
+- [x] failed write events are enqueued for replay
+- [x] idempotency keys suppress duplicate side effects
 
 Integration tests
 
-- [ ] simulated job crash triggers recovery path
-- [ ] transcript write retry succeeds after transient Mongo failure
-- [ ] duplicate event delivery leaves one consistent final record
+- [x] simulated job crash triggers recovery path
+- [x] transcript write retry succeeds after transient Mongo failure
+- [x] duplicate event delivery leaves one consistent final record
+
+Implementation notes as of April 5, 2026
+
+- the worker now marks recoverable rooms exactly once, builds a replacement-job recovery prompt from recent transcript history, and increments `recovery_count` on the call session
+- transcript writes now retry transient failures and fall back to a Mongo-backed dead-letter queue when they still cannot be persisted
+- transcript-side idempotency keys now suppress duplicate side effects inside the worker pipeline, while backend webhook idempotency remains in place for provider callbacks
 
 ---
 
 ## 11. Observability
 
-- [ ] Implement per-turn latency metrics
-- [ ] Implement call setup timing
-- [ ] Implement worker saturation and room quality metrics
-- [ ] Build initial Grafana dashboards
+- [x] Implement per-turn latency metrics
+- [x] Implement call setup timing
+- [x] Implement worker saturation and room quality metrics
+- [x] Build initial Grafana dashboards
 
 Unit tests
 
-- [ ] latency calculators compute perceived and pipeline RTT correctly
-- [ ] metric label sets stay stable and low-cardinality
+- [x] latency calculators compute perceived and pipeline RTT correctly
+- [x] metric label sets stay stable and low-cardinality
 
 Integration tests
 
-- [ ] Prometheus scrape returns all required metrics during a live test
-- [ ] room quality metrics are persisted into session summaries
+- [x] Prometheus scrape returns all required metrics during a live test
+- [x] room quality metrics are persisted into session summaries
+
+Implementation notes as of April 5, 2026
+
+- the worker now exposes a local Prometheus scrape endpoint on `COZMO_AGENT_METRICS_PORT` and publishes low-cardinality metrics for active jobs, call setup time, per-turn RTT, STT latency, LLM TTFT, TTS first-audio latency, and recovery count
+- the worker now also publishes CPU utilization, memory utilization, queue depth, jitter, packet loss, and MOS gauges; CPU and memory are sampled in-process, and room quality is polled from LiveKit RTC stats
+- backend `/metrics` now projects persisted session state into gauges for active calls and failed call setups
+- call setup timing is now persisted into `call_sessions.metrics_summary.call_setup_ms` from lifecycle timestamps when the room transitions from created to connected
+- room quality snapshots are now persisted into `call_sessions.voice_quality` through the worker call-state update path during active calls
+- Prometheus now scrapes backend `:8000/metrics` and agent `:9108/metrics` in the Compose stack, and Grafana is provisioned with a default Prometheus datasource plus the `Cozmo Platform Overview` dashboard
+- local-host development mode is supported by scraping `host.docker.internal` from the Prometheus container when backend and agent are not running inside Compose
+- live scrape validation tests now cover the worker's real HTTP exporter and backend `/metrics` output
 
 ---
 
 ## 12. End-To-End And Load Validation
 
-- [ ] Build synthetic end-to-end tests with mocked or simulated media/provider edges
-- [ ] Build staged PSTN smoke test checklist
-- [ ] Build stepped load tests for 25, 50, and 100 calls
+- [x] Build synthetic end-to-end tests with mocked or simulated media/provider edges
+- [x] Build staged PSTN smoke test checklist
+- [x] Build stepped load tests for 25, 50, and 100 calls
 
 Unit tests
 
-- [ ] load test config parser validates concurrency profiles
+- [x] load test config parser validates concurrency profiles
 
 Integration tests
 
-- [ ] local full-stack synthetic call succeeds
+- [x] local full-stack synthetic call succeeds
 - [ ] staged PSTN smoke test succeeds
 - [ ] 25-call, 50-call, and 100-call runs record latency and failure-rate outputs
+
+Implementation notes as of April 5, 2026
+
+- `tests/e2e/test_synthetic_call_flow.py` now exercises a synthetic cross-service call using signed LiveKit webhooks, shared in-memory persistence, the agent turn pipeline, and backend transcript/call APIs
+- `docs/staged-pstn-smoke-test.md` now records the manual staging checklist, evidence capture points, and pass/fail criteria for real inbound PSTN checks
+- `tests/load/profiles.json`, `tests/load/config.py`, and `tests/load/runner.py` now provide stepped 25/50/100 synthetic load profiles plus a JSON-reporting runner wired into `infra/scripts/load_test.sh`
+- actual staged PSTN execution and real 25/50/100 benchmark runs are still pending manual execution against a stable environment
 
 ---
 
