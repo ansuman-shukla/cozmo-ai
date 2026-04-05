@@ -12,6 +12,15 @@ The system is designed to work like a real production telephony platform, not a 
 
 ---
 
+## 🎬 Demo
+
+| | |
+|---|---|
+| **Live call demo** — multi-turn conversation, barge-in, knowledge-grounded responses | [▶ Watch on YouTube](https://youtu.be/i41AJjZDZs0) |
+| **Load test walkthrough** — 100 concurrent calls, Grafana dashboard live | [▶ Watch on Loom](https://www.loom.com/share/3f93107b8f2c43598b29fc8393d46509) |
+
+---
+
 ## 🏗️ Architecture
 
 ```
