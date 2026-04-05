@@ -1,0 +1,12 @@
+{
+  "profile_name": "100-calls",
+  "concurrent_calls": 100,
+  "success_count": 98,
+  "failure_count": 2,
+  "setup_failure_count": 2,
+  "average_perceived_rtt_ms": 608.015306122449,
+  "p95_perceived_rtt_ms": 637.0,
+  "max_perceived_rtt_ms": 637.0,
+  "started_at": "2026-04-05T12:23:03.224817+00:00",
+  "completed_at": "2026-04-05T12:24:02.637157+00:00"
+}

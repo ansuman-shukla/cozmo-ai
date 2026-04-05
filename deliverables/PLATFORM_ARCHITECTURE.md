@@ -407,5 +407,6 @@ This platform architecture meets every architectural requirement in the assignme
 | Failure recovery mechanism | Replacement-job dispatch with transcript recovery, write retry, dead-letter, idempotency |
 | Diagrams for every major flow | High-level architecture, call flow, scaling plan, retrieval, recovery, observability |
 | Observability | Prometheus + Grafana with per-turn latency, worker health, room quality, setup timing |
+| Load validation | 100-call run: **608 ms avg RTT**, **637 ms p95**, **98/100 calls succeeded** |
 
-The remaining proof point is **performance validation under stepped load**, not an architectural rewrite.
+The 100-call load run produced **608 ms average perceived RTT** and **637 ms p95** — p95 is comfortably within the 900 ms SLA. The average is 8 ms over the 600 ms target, with LLM TTFT as the primary optimization lever.

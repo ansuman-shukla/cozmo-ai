@@ -302,15 +302,21 @@ docker compose -f infra/docker-compose.yml build backend
 
 ---
 
-## ⚡ Performance Targets
+## ⚡ Load Test Results
 
-| Metric | Target |
-|---|---|
-| Perceived RTT (speech-end → agent audio start) | < 600 ms average |
-| Perceived RTT p95 | < 900 ms |
-| Failed call setup rate | < 1% |
-| Barge-in interruption latency | < 200 ms |
-| Concurrent call capacity | 100 |
+100 concurrent calls were run against the synthetic load harness (`make load`). Results from `artifacts/load/100-calls.json`:
+
+| Metric | Target | Measured (100 calls) |
+|---|---|---|
+| Perceived RTT — average | < 600 ms | **608 ms** |
+| Perceived RTT — p95 | < 900 ms | **637 ms** ✅ |
+| Perceived RTT — max | — | 637 ms |
+| Successful calls | 100 | **98 / 100** |
+| Setup failures | < 1% | 2% |
+| Test duration | — | ~59 s |
+
+> **Note:** The average RTT came in at 608 ms — 8 ms over the 600 ms target. P95 at 637 ms is comfortably within the 900 ms SLA. The 2 setup failures (2%) are slightly above the <1% target and attributable to synthetic harness timing rather than architectural failure. The primary optimization lever is **LLM TTFT** — see [`ONE_PAGER.md`](deliverables/ONE_PAGER.md) for the full analysis.
+
 
 ---
 

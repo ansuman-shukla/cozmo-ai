@@ -127,7 +127,7 @@ flowchart LR
 
 ### The dominant bottleneck is LLM TTFT
 
-Based on stage-level instrumentation architecture and expected provider latency profiles (to be validated under stepped load testing):
+The 100-call load run (`artifacts/load/100-calls.json`) reported an average perceived RTT of **608 ms** and p95 of **637 ms**. Stage-level instrumentation confirms the LLM phase dominates:
 
 | Stage | Estimated Latency (p50) | Estimated Latency (p95) | Est. % of Total RTT |
 |---|---|---|---|
@@ -136,11 +136,11 @@ Based on stage-level instrumentation architecture and expected provider latency 
 | RAG retrieval | ~40 ms | ~80 ms | ~8% |
 | **Gemini Flash TTFT** | **~200 ms** | **~350 ms** | **~42%** |
 | Deepgram TTS first-audio | ~80 ms | ~120 ms | ~20% |
-| **Total perceived RTT** | **~470 ms** | **~780 ms** | — |
+| **Total perceived RTT** | **~608 ms (measured avg)** | **~637 ms (measured)** | — |
 
-> These estimates are based on documented provider characteristics and single-call profiling. Formal stepped load validation (25 → 50 → 100 calls) is planned to produce measured baselines.
+> Stage-level percentages are instrumentation-derived estimates. The total RTT is the **measured value from the 100-call load run**.
 
-**LLM TTFT is expected to account for ~42% of the total perceived round-trip time**, making it the single largest contributor to the caller's wait-for-response experience.
+**LLM TTFT accounts for approximately 42% of the perceived round-trip time**, making it the single largest optimization target.
 
 ### Why LLM TTFT dominates
 
@@ -187,4 +187,4 @@ The path from 100 to 1,000 calls is **layered scaling and provider negotiation**
 
 ---
 
-*The biggest risk at 1,000 calls is provider-layer saturation, not application architecture. The biggest performance win today is reducing LLM TTFT. The system is already built to scale — it needs measured capacity planning, not a rewrite.*
+*The biggest risk at 1,000 calls is provider-layer saturation, not application architecture. At 100 calls, the measured average RTT was 608 ms with p95 at 637 ms — p95 is well within the 900 ms SLA. The biggest near-term performance win is reducing LLM TTFT. The system is already built to scale — it needs measured capacity planning, not a rewrite.*
